@@ -48,7 +48,7 @@ def load_all_models():
     Tüm modelleri ve vektörleştiricileri tek seferde yükler.
     """
     try:
-        with open("legal_models.pkl", "rb") as f:
+        with open("final_models_combined.pkl", "rb") as f:
             models_data = pickle.load(f)
         return models_data
     except FileNotFoundError:
