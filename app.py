@@ -2,9 +2,10 @@ import streamlit as st
 import pickle
 import numpy as np
 import os
+import pandas as pd
+import google.generativeai as genai
 
 # Gerekli kütüphaneleri ve temel sınıfları import ediyoruz.
-# pickle.load() fonksiyonunun özel sınıfımızı ve modelleri tanıması için bu importlar gereklidir.
 from sklearn.base import BaseEstimator, ClassifierMixin, clone
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
@@ -13,7 +14,6 @@ from sklearn.dummy import DummyClassifier
 # ==============================================================================
 # HATA DÜZELTMESİ: CustomLawClassifier Sınıf Tanımı
 # Bu tanım, eğitim script'inizdeki ile birebir aynı olmalıdır.
-# Pickle, .pkl dosyasını okurken bu sınıfın yapısını bilmek zorundadır.
 # ==============================================================================
 class CustomLawClassifier(BaseEstimator, ClassifierMixin):
     def __init__(self, base_estimator):
@@ -35,115 +35,176 @@ class CustomLawClassifier(BaseEstimator, ClassifierMixin):
         return np.array([model.predict(X) for model in self.models]).T
 
 # ==============================================================================
+# GEMINI API AYARLARI
+# ==============================================================================
+try:
+    # Gemini API anahtarını Streamlit secrets'tan alıyoruz.
+    api_key = st.secrets["AIzaSyBgnfADR3Ukj6VnO8_yR6lch_XmpUI-Wic"]
+    genai.configure(api_key=api_key)
+    gemini_model = genai.GenerativeModel('gemini-1.5-flash') # veya 'gemini-pro'
+except Exception as e:
+    st.error(f"Gemini API anahtarı yüklenirken bir hata oluştu: {e}")
+    st.info("Lütfen `.streamlit/secrets.toml` dosyasında `GEMINI_API_KEY`'in doğru şekilde ayarlandığından emin olun.")
+    gemini_model = None
+
+
+# ==============================================================================
 # STREAMLIT UYGULAMASI
 # ==============================================================================
 
-# Sayfa yapılandırması (geniş mod ve başlık)
+# Sayfa yapılandırması
 st.set_page_config(page_title="Hukuki Metin Analizi", layout="wide")
 
 # Başlık ve açıklama
-st.title("⚖️ Kamu Zararı ve İlgili Kanun Tahmin Aracı")
-st.markdown("Bu uygulama, girilen dava metnine göre ilgili **kanunları** ve **kamu zararı** olup olmadığını tahmin eder.")
+st.title("⚖️ Gelişmiş Hukuki Metin Analiz Aracı")
+st.markdown("Bu uygulama, girilen dava metnine göre ilgili **kanunları**, **kamu zararı** durumunu tahmin eder ve **Gemini AI** ile dava metninin özetini çıkarır.")
 st.markdown("---")
 
-# === Model Yükleyici Fonksiyon ===
+# === Model ve Veri Yükleyici Fonksiyonlar ===
 @st.cache_resource
 def load_all_models():
-    """
-    Tüm modelleri ve vektörleştiricileri, dosyanın tam yolunu bularak güvenli bir şekilde yükler.
-    """
-    # Bu kod, app.py dosyasının bulunduğu dizini bularak dosya yolunu doğru şekilde oluşturur.
-    # Bu sayede "FileNotFoundError" hatasının önüne geçilir.
+    """Tüm modelleri ve vektörleştiricileri güvenli bir şekilde yükler."""
     script_dir = os.path.dirname(os.path.realpath(__file__))
     file_path = os.path.join(script_dir, "final_models_combined.pkl")
-    
     try:
         with open(file_path, "rb") as f:
             models_data = pickle.load(f)
         return models_data
     except FileNotFoundError:
-        # Hata durumunda kullanıcıya bilgilendirici bir mesaj gösterilir.
-        st.error(f"🚨 Model dosyası belirtilen yolda bulunamadı: {file_path}")
+        st.error(f"🚨 Model dosyası bulunamadı: {file_path}")
         st.info("Lütfen 'final_models_combined.pkl' dosyasının 'app.py' ile aynı dizinde olduğundan emin olun.")
         return None
 
+@st.cache_data
+def load_excel_data(uploaded_file):
+    """Yüklenen Excel dosyasını bir DataFrame olarak yükler ve önbelleğe alır."""
+    if uploaded_file is not None:
+        try:
+            df = pd.read_excel(uploaded_file)
+            # Sütun isimlerinin doğruluğunu kontrol et
+            if 'GİRİŞ' not in df.columns or 'Tam Metin' not in df.columns:
+                st.error("Yüklenen Excel dosyasında 'GİRİŞ' ve/veya 'Tam Metin' sütunları bulunamadı.")
+                return None
+            return df
+        except Exception as e:
+            st.error(f"Excel dosyası okunurken bir hata oluştu: {e}")
+            return None
+    return None
+
 # === Modelleri Yükle ve Değişkenlere Ata ===
 models_bundle = load_all_models()
-
-# Modellerin başarılı bir şekilde yüklenip yüklenmediğini kontrol et
 if models_bundle is None:
-    st.stop() # Model yoksa uygulamayı durdur
+    st.stop()
 else:
     try:
-        # Doğru anahtarları kullanarak her bir bileşeni değişkene ata
         law_model = models_bundle['law_model']
         damage_model = models_bundle['damage_model']
         vectorizer_laws = models_bundle['vectorizer_laws']
         vectorizer_damage = models_bundle['vectorizer_damage']
         mlb_classes = models_bundle['mlb_classes']
     except KeyError as e:
-        st.error(f"🚨 Model dosyasında beklenen anahtar bulunamadı: {e}. Lütfen model dosyasının doğru eğitim script'i ile oluşturulduğundan emin olun.")
+        st.error(f"🚨 Model dosyasında beklenen anahtar bulunamadı: {e}.")
         st.stop()
 
 
-# === Tahmin Fonksiyonu ===
+# === Yardımcı Fonksiyonlar ===
 def predict_case(text, law_vec, damage_vec, law_mdl, damage_mdl, classes):
-    """
-    Verilen metin için hem kanun hem de kamu zararı tahmini yapar.
-    Her model kendi özel vektörleştiricisini kullanır.
-    """
-    # Kanun tahmini için 'vectorizer_laws' kullanılıyor
+    """Verilen metin için hem kanun hem de kamu zararı tahmini yapar."""
     X_laws = law_vec.transform([text])
     law_prediction_vector = law_mdl.predict(X_laws)[0]
     predicted_laws = [classes[i] for i, val in enumerate(law_prediction_vector) if val == 1]
     
-    # Kamu Zararı tahmini için 'vectorizer_damage' kullanılıyor
     X_damage = damage_vec.transform([text])
     damage_prediction_code = damage_mdl.predict(X_damage)[0]
     has_public_damage = "VAR" if damage_prediction_code == 1 else "YOK"
-
     return predicted_laws, has_public_damage
 
-# === Kullanıcı Arayüzü (İki Sütunlu Tasarım) ===
-col1, col2 = st.columns([2, 1]) # Giriş sütunu daha geniş olsun
+def find_full_text(df, input_text):
+    """DataFrame'de verilen giriş metnini arar ve karşılık gelen 'Tam Metin'i döndürür."""
+    if df is None:
+        return None
+    # Giriş metninin, 'GİRİŞ' sütunundaki bir metnin başlangıcında olup olmadığını kontrol et
+    # .strip() ile boşlukları temizleyerek daha sağlam bir eşleştirme yapılır.
+    mask = df['GİRİŞ'].str.strip().str.startswith(input_text.strip(), na=False)
+    if mask.any():
+        # İlk eşleşen satırın 'Tam Metin' değerini al
+        return df.loc[mask, 'Tam Metin'].iloc[0]
+    return None
+
+def get_gemini_summary(text):
+    """Verilen metni Gemini API'sine göndererek bir özet alır."""
+    if gemini_model is None:
+        return "Gemini modeli yüklenemediği için özet oluşturulamadı."
+    try:
+        prompt = f"""Aşağıdaki hukuki metni analiz et ve ana konuyu, tarafların temel argümanlarını ve olayın sonucunu (eğer belirtilmişse) vurgulayan kısa ve anlaşılır bir özet çıkar. Özet, hukuki terimlerden arındırılmış ve herkesin anlayabileceği bir dilde olmalıdır.
+
+Metin:
+"{text}"
+
+Özet:
+"""
+        response = gemini_model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"Gemini özetleme sırasında bir hata oluştu: {e}"
+
+
+# === Kullanıcı Arayüzü ===
+col1, col2 = st.columns([2, 1])
 
 with col1:
-    st.subheader("📝 Dava Metni")
+    st.subheader("📁 Veri Dosyası")
+    uploaded_file = st.file_uploader(
+        "Lütfen 'SOMUT OLAY-PYHTON.xlsx' dosyasını yükleyin:",
+        type=['xlsx']
+    )
+    df_data = load_excel_data(uploaded_file)
+    
+    st.subheader("📝 Dava Metni (Giriş Kısmı)")
     input_text = st.text_area(
-        "Analiz edilecek metni buraya girin:", 
-        height=300, 
+        "Analiz edilecek metnin başlangıç kısmını buraya girin:", 
+        height=250, 
         placeholder="Örnek: Eşi çalışan personele aile yardımı ödeneği ödenmesi..."
     )
 
-    # Butona basıldığında tahmin işlemini başlat
     if st.button("🔍 Analiz Et", type="primary", use_container_width=True):
-        if not input_text.strip():
+        if df_data is None:
+            st.warning("Lütfen analizden önce Excel dosyasını yükleyin.")
+        elif not input_text.strip():
             st.warning("Lütfen analiz için bir metin girin.")
         else:
-            with st.spinner("Modeller çalışıyor, tahminler yapılıyor..."):
-                # Tahminleri yap ve sonuçları session_state'e kaydet (sayfa yenilense de kalır)
+            with st.spinner("Analiz yapılıyor..."):
+                # 1. Klasik model tahminleri
                 laws, damage = predict_case(
-                    input_text, 
-                    vectorizer_laws, 
-                    vectorizer_damage, 
-                    law_model, 
-                    damage_model, 
-                    mlb_classes
+                    input_text, vectorizer_laws, vectorizer_damage, 
+                    law_model, damage_model, mlb_classes
                 )
                 st.session_state['predicted_laws'] = laws
                 st.session_state['predicted_damage'] = damage
+                
+                # 2. Excel'den tam metni bul
+                full_text = find_full_text(df_data, input_text)
+                st.session_state['full_text'] = full_text
+                
+                # 3. Gemini ile özetleme
+                if full_text:
+                    gemini_summary = get_gemini_summary(full_text)
+                    st.session_state['gemini_summary'] = gemini_summary
+                else:
+                    st.session_state['gemini_summary'] = "Girdiğiniz metinle eşleşen bir 'Tam Metin' Excel dosyasında bulunamadı. Özetleme yapılamadı."
+
                 st.session_state['ran_prediction'] = True
 
 with col2:
     st.subheader("📊 Analiz Sonuçları")
-    # Eğer daha önce bir tahmin yapıldıysa sonuçları göster
     if 'ran_prediction' in st.session_state:
+        # Model Tahminleri
         st.markdown("##### 📘 Tahmin Edilen İlgili Kanunlar:")
         if st.session_state['predicted_laws']:
             for k in st.session_state['predicted_laws']:
                 st.success(f"- {k}")
         else:
-            st.warning("⚠️ İlişkili bir kanun bulunamadı.")
+            st.info("⚠️ İlişkili bir kanun bulunamadı.")
         
         st.markdown("---")
 
@@ -153,5 +214,13 @@ with col2:
             st.error(f"**{damage_result}**")
         else:
             st.info(f"**{damage_result}**")
+        
+        st.markdown("---")
+
+        # Gemini Özeti
+        st.markdown("##### 🤖 Gemini AI Metin Özeti:")
+        with st.expander("Özeti Görmek İçin Tıklayın", expanded=True):
+            st.info(st.session_state.get('gemini_summary', 'Özet bulunamadı.'))
+
     else:
-        st.info("Sonuçları görmek için lütfen sol tarafa bir metin girip 'Analiz Et' butonuna tıklayın.")
+        st.info("Sonuçları görmek için lütfen bir Excel dosyası yükleyin, metin girin ve 'Analiz Et' butonuna tıklayın.")
