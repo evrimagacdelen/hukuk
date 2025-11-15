@@ -12,7 +12,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.dummy import DummyClassifier
 
 # ==============================================================================
-# HATA DÜZELTMESİ: CustomLawClassifier Sınıf Tanımı
+# CustomLawClassifier Sınıf Tanımı
 # ==============================================================================
 class CustomLawClassifier(BaseEstimator, ClassifierMixin):
     def __init__(self, base_estimator):
@@ -34,18 +34,15 @@ class CustomLawClassifier(BaseEstimator, ClassifierMixin):
         return np.array([model.predict(X) for model in self.models]).T
 
 # ==============================================================================
-# DEĞİŞİKLİK 2: GEMINI API AYARLARI (API Anahtarı Koda Eklendi - ÖNERİLMEZ!)
+# GEMINI API AYARLARI (API Anahtarı Koda Eklendi - ÖNERİLMEZ!)
 # ==============================================================================
-# 🚨 UYARI: API anahtarınızı asla herkese açık kod depolarında paylaşmayın!
-# Bu anahtarın çalınması hesabınızın kötüye kullanılmasına neden olabilir.
+# 🚨 UYARI: API anahtarınızı asla herkese açık kod depolarında (GitHub vb.) paylaşmayın!
 try:
-    # API anahtarını doğrudan buraya yazın.
-    API_KEY = "BURAYA_YENİ_VE_GÜVENLİ_API_ANAHTARINIZI_YAPIŞTIRIN"
+    API_KEY = "AIzaSyBgnfADR3Ukj6VnO8_yR6lch_XmpUI-Wic"
     genai.configure(api_key=API_KEY)
     gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
     st.error(f"Gemini API yapılandırılırken bir hata oluştu: {e}")
-    st.info("Lütfen kod içerisindeki API_KEY değişkenine geçerli bir anahtar girdiğinizden emin olun.")
     gemini_model = None
 
 # ==============================================================================
@@ -74,12 +71,9 @@ def load_all_models():
         st.error(f"🚨 Model dosyası bulunamadı: {file_path}")
         return None
 
-# ==============================================================================
-# DEĞİŞİKLİK 1: EXCEL DOSYASINI OTOMATİK OLARAK YÜKLEME
-# ==============================================================================
 @st.cache_data
 def load_excel_data():
-    """'SOMUT OLAY-PYHTON.xlsx' dosyasını app.py ile aynı dizinden yükler."""
+    """'SOMUT OLAY-PYHTON.xlsx' dosyasını app.py ile aynı dizinden otomatik yükler."""
     script_dir = os.path.dirname(os.path.realpath(__file__))
     file_path = os.path.join(script_dir, "SOMUT OLAY-PYHTON.xlsx")
     try:
@@ -96,14 +90,15 @@ def load_excel_data():
         st.error(f"Excel dosyası okunurken bir hata oluştu: {e}")
         return None
 
-# === Modelleri ve Veriyi Yükle ===
+# === Modelleri ve Veriyi Otomatik Yükle ===
 models_bundle = load_all_models()
-df_data = load_excel_data() # Dosya yükleyici yerine doğrudan fonksiyonu çağırıyoruz.
+df_data = load_excel_data() # Dosya artık burada, arayüzden bağımsız olarak yükleniyor.
 
 if models_bundle is None or df_data is None:
     st.warning("Modeller veya veri dosyası yüklenemedi. Lütfen yukarıdaki hata mesajlarını kontrol edin.")
-    st.stop() # Modeller veya veri yoksa uygulamayı durdur
+    st.stop()
 
+# Modelleri değişkenlere ata
 try:
     law_model = models_bundle['law_model']
     damage_model = models_bundle['damage_model']
@@ -116,7 +111,6 @@ except KeyError as e:
 
 # === Yardımcı Fonksiyonlar ===
 def predict_case(text, law_vec, damage_vec, law_mdl, damage_mdl, classes):
-    """Verilen metin için hem kanun hem de kamu zararı tahmini yapar."""
     X_laws = law_vec.transform([text])
     law_prediction_vector = law_mdl.predict(X_laws)[0]
     predicted_laws = [classes[i] for i, val in enumerate(law_prediction_vector) if val == 1]
@@ -127,14 +121,12 @@ def predict_case(text, law_vec, damage_vec, law_mdl, damage_mdl, classes):
     return predicted_laws, has_public_damage
 
 def find_full_text(df, input_text):
-    """DataFrame'de verilen giriş metnini arar ve karşılık gelen 'Tam Metin'i döndürür."""
     mask = df['GİRİŞ'].str.strip().str.startswith(input_text.strip(), na=False)
     if mask.any():
         return df.loc[mask, 'Tam Metin'].iloc[0]
     return None
 
 def get_gemini_summary(text):
-    """Verilen metni Gemini API'sine göndererek bir özet alır."""
     if gemini_model is None:
         return "Gemini modeli yüklenemediği için özet oluşturulamadı."
     try:
@@ -154,6 +146,7 @@ Metin:
 col1, col2 = st.columns([2, 1])
 
 with col1:
+    # Gördüğünüz gibi burada artık dosya yükleyici (st.file_uploader) yok.
     st.subheader("📝 Dava Metni (Giriş Kısmı)")
     input_text = st.text_area(
         "Analiz edilecek metnin başlangıç kısmını buraya girin:", 
