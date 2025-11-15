@@ -3,92 +3,138 @@ import pickle
 import numpy as np
 
 # Gerekli kütüphaneleri ve temel sınıfları import ediyoruz.
-# Pickle'ın özel sınıfı (CustomLawClassifier) çözebilmesi için bunlar gereklidir.
-from sklearn.base import BaseEstimator, ClassifierMixin
+# pickle.load() fonksiyonunun özel sınıfımızı ve modelleri tanıması için bu importlar gereklidir.
+from sklearn.base import BaseEstimator, ClassifierMixin, clone
 from sklearn.linear_model import LogisticRegression
-from sklearn.svm import LinearSVC
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.dummy import DummyClassifier
 
-# DÜZELTME 1: CustomLawClassifier sınıfının tanımını buradan SİLİYORUZ.
-# Pickle dosyası zaten bu sınıfın yapısını biliyor, tekrar tanımlamak gereksiz ve riskli.
+# ==============================================================================
+# HATA DÜZELTMESİ: CustomLawClassifier Sınıf Tanımı
+# Bu tanım, eğitim script'inizdeki ile birebir aynı olmalıdır.
+# Pickle, .pkl dosyasını okurken bu sınıfın yapısını bilmek zorundadır.
+# ==============================================================================
+class CustomLawClassifier(BaseEstimator, ClassifierMixin):
+    def __init__(self, base_estimator):
+        self.base_estimator = base_estimator
+        self.models = []
+    def fit(self, X, Y):
+        self.models = []
+        for i in range(Y.shape[1]):
+            y_subset = Y[:, i]
+            unique_classes = np.unique(y_subset)
+            if len(unique_classes) < 2:
+                model = DummyClassifier(strategy="constant", constant=unique_classes[0])
+            else:
+                model = clone(self.base_estimator)
+            model.fit(X, y_subset)
+            self.models.append(model)
+        return self
+    def predict(self, X):
+        return np.array([model.predict(X) for model in self.models]).T
 
-# === Streamlit Arayüzü
-st.title("Kamu Zararı Tahmin Aracı")
-st.markdown("Bu uygulama girilen dava metnine göre ilgili **kanunları** ve **kamu zararı durumunu** tahmin eder.")
+# ==============================================================================
+# STREAMLIT UYGULAMASI
+# ==============================================================================
+st.set_page_config(page_title="Hukuki Metin Analizi", layout="wide")
+st.title("⚖️ Kamu Zararı ve İlgili Kanun Tahmin Aracı")
+st.markdown("Bu uygulama, girilen dava metnine göre ilgili **kanunları** ve **kamu zararı** olup olmadığını tahmin eder.")
+st.markdown("---")
 
-# === Model Yükleyici
+# === Model Yükleyici Fonksiyon ===
 @st.cache_resource
-def load_models():
-    # DÜZELTME 2: Eğitimde kaydettiğiniz doğru dosya adını kullanıyoruz.
-    with open("legal_models.pkl", "rb") as f:
-        models_data = pickle.load(f)
-    return models_data
+def load_all_models():
+    """
+    Tüm modelleri ve vektörleştiricileri tek seferde yükler.
+    """
+    try:
+        with open("legal_models.pkl", "rb") as f:
+            models_data = pickle.load(f)
+        return models_data
+    except FileNotFoundError:
+        return None
 
-# DÜZELTME 3: .pkl dosyasındaki TÜM doğru anahtarları yüklüyoruz.
-try:
-    models_data = load_models()
-    law_model = models_data['law_model']
-    damage_model = models_data['damage_model']
-    vectorizer_laws = models_data['vectorizer_laws']       # Kanun için ayrı vektörleştirici
-    vectorizer_damage = models_data['vectorizer_damage'] # Kamu zararı için ayrı vektörleştirici
-    mlb_classes = models_data['mlb_classes']
-except FileNotFoundError:
-    st.error("Model dosyası ('final_models_combined.pkl') bulunamadı. Lütfen dosyanın doğru yolda olduğundan emin olun.")
-    st.stop()
-except KeyError as e:
-    st.error(f"Model dosyasında beklenen anahtar bulunamadı: {e}. Lütfen eğitim script'i ile .pkl dosyasının uyumlu olduğundan emin olun.")
-    st.stop()
+# === Modelleri Yükle ve Değişkenlere Ata ===
+models_bundle = load_all_models()
+
+if models_bundle is None:
+    st.error("🚨 Model dosyası ('final_models_combined.pkl') bulunamadı. Lütfen dosyanın `app.py` ile aynı dizinde olduğundan emin olun.")
+    st.stop() # Model yoksa uygulamayı durdur
+else:
+    try:
+        law_model = models_bundle['law_model']
+        damage_model = models_bundle['damage_model']
+        vectorizer_laws = models_bundle['vectorizer_laws']
+        vectorizer_damage = models_bundle['vectorizer_damage']
+        mlb_classes = models_bundle['mlb_classes']
+    except KeyError as e:
+        st.error(f"🚨 Model dosyasında beklenen anahtar bulunamadı: {e}. Lütfen model dosyasının doğru eğitim script'i ile oluşturulduğundan emin olun.")
+        st.stop()
 
 
-# === Tahmin Fonksiyonu
+# === Tahmin Fonksiyonu ===
 def predict_case(text, law_vec, damage_vec, law_mdl, damage_mdl, classes):
-    # DÜZELTME 4: Her model için kendi doğru vektörleştiricisini kullanıyoruz.
-    
-    # Kanun tahmini için 'vectorizer_laws' kullanılıyor
+    """
+    Verilen metin için hem kanun hem de kamu zararı tahmini yapar.
+    """
+    # Kanun tahmini için kendi vektörleştiricisini kullan
     X_laws = law_vec.transform([text])
     law_prediction_vector = law_mdl.predict(X_laws)[0]
     predicted_laws = [classes[i] for i, val in enumerate(law_prediction_vector) if val == 1]
     
-    # Kamu Zararı tahmini için 'vectorizer_damage' kullanılıyor
+    # Kamu Zararı tahmini için kendi vektörleştiricisini kullan
     X_damage = damage_vec.transform([text])
     damage_prediction_code = damage_mdl.predict(X_damage)[0]
     has_public_damage = "VAR" if damage_prediction_code == 1 else "YOK"
 
     return predicted_laws, has_public_damage
 
-# === Kullanıcı Girdisi
-input_text = st.text_area("Dava metnini buraya girin:", height=200, placeholder="Örnek: Eşinden boşanan personele aile yardımı ödemesinin yapılması...")
+# === Kullanıcı Arayüzü ===
+col1, col2 = st.columns(2)
 
-# === Tahmin Butonu
-if st.button("🔍 Tahmin Et", type="primary"):
-    if not input_text.strip():
-        st.warning("Lütfen bir metin girin.")
+with col1:
+    st.subheader("📝 Dava Metni")
+    input_text = st.text_area(
+        "Analiz edilecek metni buraya girin:", 
+        height=300, 
+        placeholder="Örnek: Eşi çalışan personele aile yardımı ödeneği ödenmesi..."
+    )
+
+    if st.button("🔍 Analiz Et", type="primary", use_container_width=True):
+        if not input_text.strip():
+            st.warning("Lütfen analiz için bir metin girin.")
+        else:
+            with st.spinner("Modeller çalışıyor, tahminler yapılıyor..."):
+                # Tahminleri yap ve session_state'e kaydet
+                laws, damage = predict_case(
+                    input_text, 
+                    vectorizer_laws, 
+                    vectorizer_damage, 
+                    law_model, 
+                    damage_model, 
+                    mlb_classes
+                )
+                st.session_state['predicted_laws'] = laws
+                st.session_state['predicted_damage'] = damage
+                st.session_state['ran_prediction'] = True
+
+with col2:
+    st.subheader("📊 Analiz Sonuçları")
+    if 'ran_prediction' in st.session_state:
+        st.markdown("##### 📘 Tahmin Edilen İlgili Kanunlar:")
+        if st.session_state['predicted_laws']:
+            for k in st.session_state['predicted_laws']:
+                st.success(f"- {k}")
+        else:
+            st.warning("⚠️ İlişkili bir kanun bulunamadı.")
+        
+        st.markdown("---")
+
+        st.markdown("##### 💸 Kamu Zararı Durumu:")
+        damage_result = st.session_state['predicted_damage']
+        if damage_result == "VAR":
+            st.error(f"**{damage_result}**")
+        else:
+            st.info(f"**{damage_result}**")
     else:
-        with st.spinner("Tahmin yapılıyor..."):
-            # DÜZELTME 5: Fonksiyona gerekli tüm model ve vektörleştiricileri iletiyoruz.
-            laws, damage = predict_case(
-                input_text, 
-                vectorizer_laws, 
-                vectorizer_damage, 
-                law_model, 
-                damage_model, 
-                mlb_classes
-            )
-            
-            st.success("✅ Tahmin tamamlandı!")
-
-            st.subheader("📘 Tahmin Edilen Kanunlar:")
-            if laws:
-                for k in laws:
-                    st.markdown(f"- {k}")
-            else:
-                st.markdown("⚠️ İlişkili bir kanun bulunamadı.")
-
-            st.subheader("Kamu Zararı Durumu:")
-            # Sonucu daha belirgin hale getirelim
-            if damage == "VAR":
-                st.markdown(f"**<p style='color:red;'>{damage}</p>**", unsafe_allow_html=True)
-            else:
-                st.markdown(f"**<p style='color:green;'>{damage}</p>**", unsafe_allow_html=True)
-
+        st.info("Sonuçları görmek için lütfen sol tarafa bir metin girip 'Analiz Et' butonuna tıklayın.")
