@@ -21,7 +21,7 @@ st.markdown("Bu uygulama girilen dava metnine göre ilgili **kanunları** ve **k
 @st.cache_resource
 def load_models():
     # DÜZELTME 2: Eğitimde kaydettiğiniz doğru dosya adını kullanıyoruz.
-    with open("final_models_combined.pkl", "rb") as f:
+    with open("legal_models.pkl", "rb") as f:
         models_data = pickle.load(f)
     return models_data
 
@@ -91,3 +91,4 @@ if st.button("🔍 Tahmin Et", type="primary"):
                 st.markdown(f"**<p style='color:red;'>{damage}</p>**", unsafe_allow_html=True)
             else:
                 st.markdown(f"**<p style='color:green;'>{damage}</p>**", unsafe_allow_html=True)
+
