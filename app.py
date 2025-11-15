@@ -41,7 +41,7 @@ try:
     # API anahtarını Streamlit'in sır yönetiminden güvenli bir şekilde al.
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
-    gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+    gemini_model = 'gemini-1.5-pro-latest' 
 except Exception as e:
     st.error(f"Gemini API anahtarı yüklenirken bir hata oluştu: {e}")
     st.info("Lütfen Streamlit Cloud'da uygulamanızın Ayarlar (Settings) > Sırlar (Secrets) bölümüne GEMINI_API_KEY'i doğru şekilde eklediğinizden emin olun.")
@@ -195,3 +195,4 @@ with col2:
             st.info(st.session_state.get('gemini_summary', 'Özet bulunamadı.'))
     else:
         st.info("Sonuçları görmek için lütfen sol tarafa bir metin girip 'Analiz Et' butonuna tıklayın.")
+
