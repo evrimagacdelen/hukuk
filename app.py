@@ -41,9 +41,13 @@ try:
     # API anahtarını Streamlit'in sır yönetiminden güvenli bir şekilde al.
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
-    gemini_model = 'gemini-1.5-pro-latest' 
+
+    # === DEĞİŞİKLİK BURADA ===
+    # Model adını bir metin olarak atamak yerine, bu adla bir model nesnesi oluşturuyoruz.
+    gemini_model = genai.GenerativeModel('gemini-1.5-pro-latest')
+
 except Exception as e:
-    st.error(f"Gemini API anahtarı yüklenirken bir hata oluştu: {e}")
+    st.error(f"Gemini API anahtarı yüklenirken veya model başlatılırken bir hata oluştu: {e}")
     st.info("Lütfen Streamlit Cloud'da uygulamanızın Ayarlar (Settings) > Sırlar (Secrets) bölümüne GEMINI_API_KEY'i doğru şekilde eklediğinizden emin olun.")
     gemini_model = None
 
@@ -135,6 +139,7 @@ Metin:
 
 Özet:
 """
+        # gemini_model artık doğru bir nesne olduğu için bu satır çalışacaktır.
         response = gemini_model.generate_content(prompt)
         return response.text
     except Exception as e:
@@ -144,7 +149,6 @@ Metin:
 col1, col2 = st.columns([2, 1])
 
 with col1:
-    # Arayüzde dosya yükleyici (st.file_uploader) artık bulunmuyor.
     st.subheader("📝 Dava Metni (Giriş Kısmı)")
     input_text = st.text_area(
         "Analiz edilecek metnin başlangıç kısmını buraya girin:", 
@@ -195,4 +199,3 @@ with col2:
             st.info(st.session_state.get('gemini_summary', 'Özet bulunamadı.'))
     else:
         st.info("Sonuçları görmek için lütfen sol tarafa bir metin girip 'Analiz Et' butonuna tıklayın.")
-
