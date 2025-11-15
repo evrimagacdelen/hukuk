@@ -44,7 +44,7 @@ try:
 
     # === DEĞİŞİKLİK BURADA ===
     # Model adını bir metin olarak atamak yerine, bu adla bir model nesnesi oluşturuyoruz.
-    gemini_model = genai.GenerativeModel('gemini-1.5-pro-latest')
+    gemini_model = genai.GenerativeModel('models/gemini-2.5-pro-preview-03-25')
 
 except Exception as e:
     st.error(f"Gemini API anahtarı yüklenirken veya model başlatılırken bir hata oluştu: {e}")
@@ -199,3 +199,4 @@ with col2:
             st.info(st.session_state.get('gemini_summary', 'Özet bulunamadı.'))
     else:
         st.info("Sonuçları görmek için lütfen sol tarafa bir metin girip 'Analiz Et' butonuna tıklayın.")
+
