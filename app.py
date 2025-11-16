@@ -41,8 +41,8 @@ class CustomLawClassifier(BaseEstimator, ClassifierMixin):
 # ==============================================================================
 # BÖLÜM 2: EXCEL RAPORLAMA VE GÖRSELLEŞTİRME İÇİN FONKSİYONLAR
 # ==============================================================================
-# ... (cerrahi_analiz_tek_satir, create_pie_chart, analyze_and_prepare_data fonksiyonlarında değişiklik yok) ...
 def cerrahi_analiz_tek_satir(metin):
+    # ... (Bu fonksiyonda değişiklik yok) ...
     BILINEN_UNVANLAR = sorted(['Harcama Yetkilisi', 'Gerçekleştirme Görevlisi', 'Muhasebe Yetkilisi', 'Üst Yönetici', 'Akademik Teşvik Komisyonu', 'Üniversite Yönetim Kurulu', 'Döner Sermaye Yürütme Kurulu', 'Fakülte Yönetim Kurulu', 'İtiraz Komisyonu', 'Birim Komisyon', 'Jüri', 'Üniversite Senatosu', 'Personel Daire Başkanı', 'Strateji Geliştirme Daire Başkanı', 'İdari ve Mali İşler Daire Başkanı', 'Sağlık Kültür ve Spor Daire Başkanı', 'Döner Sermaye İşletme Müdürü', 'Hastane Başmüdürü', 'Hukuk Müşaviri', 'Fakülte Sekreteri', 'Enstitü Sekreteri', 'Yüksekokul Sekreteri', 'Rektör Yardımcısı', 'Dekan Yardımcısı', 'Başhekim Yardımcısı', 'Müdür Yardımcısı', 'Yüksekokul Müdürü', 'Enstitü Müdürü', 'Merkez Müdürü', 'Şube Müdürü', 'Hastane Müdürü', 'Daire Başkanı', 'Rektör', 'Dekan', 'Başhekim', 'Genel Sekreter', 'Müdür', 'Memur', 'Şef', 'Tekniker', 'Sayman', 'Bilgisayar İşletmeni', 'Öğretim Üyesi', 'Başkan'], key=len, reverse=True)
     AKADEMIK_DESENLER = {'Prof. Dr.': r'prof\s*\.\s*dr', 'Doç. Dr.': r'doç\s*\.\s*dr', 'Yrd. Doç. Dr.': r'yrd\s*\.\s*doç\s*\.\s*dr', 'Dr. Öğr. Üyesi': r'dr\s*\.\s*öğr\s*\.\s*üyesi', 'Öğr. Gör.': r'öğr\s*\.\s*gör', 'Dr.': r'\bdr\b'}
     NORM_MAP = {'hy': 'Harcama Yetkilisi', 'gg': 'Gerçekleştirme Görevlisi', 'dekan v.': 'Dekan Vekili', 'dekan v': 'Dekan Vekili', 'rektör yrd.': 'Rektör Yardımcısı', 'rektör yrd': 'Rektör Yardımcısı', 'müdür v.': 'Müdür Vekili', 'müdür v': 'Müdür Vekili', 'müdür yrd.': 'Müdür Yardımcısı', 'müdür yrd': 'Müdür Yardımcısı', 'fakülte sekreter v.': 'Fakülte Sekreteri Vekili', 'fakülte sekreter v': 'Fakülte Sekreteri Vekili', 'fakülte sekreterv': 'Fakülte Sekreteri Vekili', 'fakül. sekr. vekili': 'Fakülte Sekreteri Vekili', 'yüksekokul sekreter v.': 'Yüksekokul Sekreteri Vekili', 'yüksekokul sekreter v': 'Yüksekokul Sekreteri Vekili', 'yüksekokul sek. v': 'Yüksekokul Sekreteri Vekili', 'genel sekreter v.': 'Genel Sekreter Vekili', 'genel sekreter v': 'Genel Sekreter Vekili', 'döner ser. işl. md. v.': 'Döner Sermaye İşletme Müdürü Vekili', 'işletme müd. v.': 'İşletme Müdürü Vekili', 'hastane md. yrd': 'Hastane Müdür Yardımcısı', 'has. baş müd.': 'Hastane Başmüdürü', 'üyk': 'Üniversite Yönetim Kurulu', 'dsyk': 'Döner Sermaye Yürütme Kurulu'}
@@ -67,19 +67,34 @@ def cerrahi_analiz_tek_satir(metin):
             elif 'rektör' in temiz_parca: roller_bu_satirda.add('Rektör Vekili')
     return list(roller_bu_satirda)
 
-def create_pie_chart(data, title, filename=None):
+def create_pie_chart(data, title):
     if data.empty:
-        st.warning(f"'{title}' için veri bulunamadığından grafik oluşturulmadı.")
         return None, False
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(7, 5))
     ax.pie(data, labels=data.index, autopct='%1.1f%%', startangle=140, 
-           wedgeprops={'edgecolor': 'white'}, textprops={'fontsize': 12})
-    ax.set_title(title, fontsize=16, pad=20, weight='bold')
+           wedgeprops={'edgecolor': 'white'}, textprops={'fontsize': 10})
+    ax.set_title(title, fontsize=14, pad=20, weight='bold')
     plt.axis('equal')
-    if filename:
-        plt.savefig(filename, bbox_inches='tight', format='png')
     return fig, True
 
+# --- YENİ EKLENEN FONKSİYON ---
+def create_bar_plot(data, title, top_n=15):
+    """Yatay bar plot oluşturan fonksiyon."""
+    if data.empty:
+        return None, False
+    
+    # Okunabilirlik için en sık görülen 'top_n' kategoriyi al ve grafiğe uygun sırala
+    data_to_plot = data.head(top_n).sort_values(ascending=True)
+    
+    fig, ax = plt.subplots(figsize=(10, 8))
+    ax.barh(data_to_plot.index, data_to_plot.values, color='skyblue')
+    ax.set_title(title, fontsize=16, pad=20, weight='bold')
+    ax.set_xlabel("Karar Sayısı")
+    plt.tight_layout() # Etiketlerin kesilmesini engeller
+    
+    return fig, True
+
+# --- GÜNCELLENEN FONKSİYON ---
 def analyze_and_prepare_data(script_dir):
     try:
         dosya_adi = os.path.join(script_dir, "sorumlu.xlsx")
@@ -93,14 +108,17 @@ def analyze_and_prepare_data(script_dir):
         df['_AzinlikOyuVar'] = df['Azinlik_Oyu'].str.upper() == 'VAR'
         df['_IsrarVar'] = df['Israr_Durumu'] != ''
         st.info("Veri temizlendi ve yardımcı analiz sütunları oluşturuldu.")
+        
         analysis_results = {
             "karar_turu": df['Karar_Turu'].value_counts(),
-            "karsi_oy": df['Azinlik_Oyu'].value_counts(),
+            "azinlik_oyu": df['Azinlik_Oyu'].value_counts(), # Azınlık oyu analizi eklendi
+            "karar_konusu": df['Karar_Konusu'].value_counts(), # Karar konusu analizi eklendi
             "kamu_zarari": df['_KamuZarariVar'].value_counts().rename({True: 'Kamu Zararı Var', False: 'Kamu Zararı Yok'}),
-            "israr_durumu": df[df['_IsrarVar']]['Israr_Durumu'].value_counts(),
             "unvan_analizi": None
         }
+        
         analiz_listesi = []
+        # ... (unvan analizi kısmı aynı)
         for _, satir in df.dropna(subset=['Sorumlular_Metni']).iterrows():
             unvanlar = cerrahi_analiz_tek_satir(satir['Sorumlular_Metni'])
             for unvan in unvanlar:
@@ -112,58 +130,30 @@ def analyze_and_prepare_data(script_dir):
             ozet_tablo_unvan['Toplam'] = ozet_tablo_unvan.sum(axis=1)
             ozet_tablo_unvan['KZ Oranı %'] = ((ozet_tablo_unvan['Kamu Zararı Var'] / ozet_tablo_unvan['Toplam']) * 100).round(1)
             analysis_results["unvan_analizi"] = ozet_tablo_unvan.sort_values(by='Toplam', ascending=False)
+            
         return analysis_results
     except Exception as e:
         st.error(f"Veri analizi sırasında bir hata oluştu: {e}")
         st.code(traceback.format_exc())
         return None
 
-# **** İŞTE DEĞİŞİKLİK BURADA ****
 def generate_excel_report(analysis_results):
-    """Analiz sonuçlarını alıp indirilebilir bir Excel raporu oluşturur."""
-    chart_files_to_delete = []
+    # ... (Bu fonksiyonda değişiklik yok) ...
     try:
         output_buffer = io.BytesIO()
         with pd.ExcelWriter(output_buffer, engine='openpyxl') as writer:
             st.info("İndirilebilir Excel raporu oluşturuluyor...")
-            
-            # SEKME 1: GENEL ÖZETLER (Değişiklik yok)
-            # ...
-            analysis_results['karar_turu'].to_excel(writer, sheet_name='Genel_Ozetler', header=['Sayı'], startrow=1)
-            analysis_results['karsi_oy'].to_excel(writer, sheet_name='Genel_Ozetler', header=['Sayı'], startrow=1, startcol=4)
-            analysis_results['kamu_zarari'].to_excel(writer, sheet_name='Genel_Ozetler', header=['Sayı'], startrow=1, startcol=8)
-            # ... (Diğer excel yazma işlemleri aynı)
-
-            # SEKME 2: UNVAN ANALİZİ (Değişiklik burada)
+            analysis_results['karar_turu'].to_excel(writer, sheet_name='Genel_Ozetler', header=['Sayı'])
+            analysis_results['kamu_zarari'].to_excel(writer, sheet_name='Genel_Ozetler', header=['Sayı'], startcol=3)
+            analysis_results['azinlik_oyu'].to_excel(writer, sheet_name='Genel_Ozetler', header=['Sayı'], startcol=6)
+            analysis_results['karar_konusu'].to_excel(writer, sheet_name='Karar_Konusu_Detaylari', header=['Sayı'])
             if analysis_results['unvan_analizi'] is not None:
-                
-                # --- DEĞİŞİKLİK BURADA BAŞLIYOR ---
-                # 1. Orijinal DataFrame'i al
-                df_unvan_full = analysis_results['unvan_analizi']
-                
-                # 2. İstenmeyen sütunları tanımla
-                columns_to_drop = ['Toplam', 'Kamu Zararı Yok', 'KZ Oranı %']
-                
-                # 3. Bu sütunları *sadece Excel'e yazılacak olan* DataFrame'den kaldır
-                df_unvan_for_excel = df_unvan_full.drop(columns=columns_to_drop, errors='ignore')
-                
-                # 4. Sadece 'Kamu Zararı Var' sütununu içeren yeni DataFrame'i Excel'e yaz
+                df_unvan_for_excel = analysis_results['unvan_analizi'].drop(columns=['Toplam', 'Kamu Zararı Yok', 'KZ Oranı %'], errors='ignore')
                 df_unvan_for_excel.to_excel(writer, sheet_name='Unvan_Kamu_Zarari_Analizi')
-                # --- DEĞİŞİKLİK BURADA BİTİYOR ---
-
-            # ... diğer sekmeler ...
-
         return output_buffer.getvalue()
-
     except Exception as e:
         st.error(f"Excel raporu oluşturulurken bir hata oluştu: {e}")
-        st.code(traceback.format_exc())
         return None
-    finally:
-        st.info("Geçici dosyalar temizleniyor...")
-        for f in chart_files_to_delete:
-            if os.path.exists(f):
-                os.remove(f)
 
 # ==============================================================================
 # BÖLÜM 3: GENEL UYGULAMA YAPISI VE AYARLAR
@@ -235,9 +225,9 @@ def get_gemini_summary(text):
 # ==============================================================================
 # BÖLÜM 4: KULLANICI ARAYÜZÜ (STREAMLIT UI)
 # ==============================================================================
-# ... (Bu bölümde değişiklik yok) ...
-st.header("1. Bireysel Dava Metni Analizi")
 
+st.header("1. Bireysel Dava Metni Analizi")
+# ... (Bireysel analiz bölümü değişmedi) ...
 if models_bundle is None or df_data is None:
     st.warning("Bireysel analiz aracı için gerekli model veya veri dosyaları yüklenemedi.")
 else:
@@ -278,8 +268,10 @@ else:
         else:
             st.info("Sonuçları görmek için bir metin girip 'Analiz Et' butonuna tıklayın.")
 
+
 st.markdown("\n\n---\n\n")
 
+# --- GÜNCELLENEN TOPLU ANALİZ BÖLÜMÜ ---
 st.header("2. Toplu Veri Analizi ve Raporlama")
 st.markdown("`sorumlu.xlsx` dosyasını kullanarak kapsamlı bir analiz yapar, sonuçları aşağıda gösterir ve tam raporu indirilebilir bir Excel dosyası olarak sunar.")
 
@@ -305,19 +297,36 @@ if 'report_data' in st.session_state:
 if 'analysis_results' in st.session_state:
     st.markdown("---")
     st.subheader("📊 Analiz Sonuçları ve Görseller")
+    
     results = st.session_state.analysis_results
+    
+    # Genel Dağılımlar
     st.markdown("#### Genel Karar Dağılımları")
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         st.write("**Karar Türü Dağılımı**")
-        fig, success = create_pie_chart(results['karar_turu'], "Karar Türü Dağılımı")
+        fig, success = create_pie_chart(results['karar_turu'], "Karar Türü")
         if success: st.pyplot(fig)
-        st.dataframe(results['karar_turu'])
     with col2:
         st.write("**Kamu Zararı Dağılımı**")
-        fig, success = create_pie_chart(results['kamu_zarari'], "Kamu Zararı Dağılımı")
+        fig, success = create_pie_chart(results['kamu_zarari'], "Kamu Zararı")
         if success: st.pyplot(fig)
-        st.dataframe(results['kamu_zarari'])
+    with col3:
+        st.write("**Azınlık Oyu Dağılımı**") # YENİ GÖRSEL
+        fig, success = create_pie_chart(results['azinlik_oyu'], "Azınlık Oyu")
+        if success: st.pyplot(fig)
+
+    # Karar Konusu Analizi - YENİ BÖLÜM
+    st.markdown("---")
+    st.markdown("#### En Sık Görülen Karar Konuları")
+    fig, success = create_bar_plot(results['karar_konusu'], "En Sık Görülen 15 Karar Konusu", top_n=15)
+    if success:
+        st.pyplot(fig)
+    
+    with st.expander("Tüm Karar Konularını ve Sayılarını Gör"):
+        st.dataframe(results['karar_konusu'])
+
+    # Unvan Analizi
     st.markdown("---")
     st.markdown("#### Unvanlara Göre Kamu Zararı Analizi")
     if results['unvan_analizi'] is not None:
