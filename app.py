@@ -5,7 +5,7 @@ import os
 import pandas as pd
 import google.generativeai as genai
 import re
-import plotly.express as px  # Plotly Express kullanmaya devam ediyoruz
+import plotly.express as px
 import io
 import traceback
 
@@ -64,27 +64,11 @@ def cerrahi_analiz_tek_satir(metin):
             elif 'rektör' in temiz_parca: roller_bu_satirda.add('Rektör Vekili')
     return list(roller_bu_satirda)
 
-# --- YENİ VE ŞIK PLOTLY GRAFİK FONKSİYONLARI ---
 def create_plotly_pie(data, title):
     if data.empty:
         return None
-    fig = px.pie(
-        data, 
-        values=data.values, 
-        names=data.index, 
-        title=title,
-        hole=0.4,  # Ortasını boşaltarak donut chart yap
-        color_discrete_sequence=px.colors.qualitative.Pastel  # Şık bir renk paleti
-    )
-    # Lejantı alta al, başlığı ortala ve arka planı şeffaf yap
-    fig.update_layout(
-        title_x=0.5,
-        legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='white' if st.get_option("theme.base") == "dark" else "black") # Tema uyumlu yazı rengi
-    )
-    # Üzerine gelince görünecek bilgi formatını ayarla
+    fig = px.pie(data, values=data.values, names=data.index, title=title, hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
+    fig.update_layout(title_x=0.5, legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='white' if st.get_option("theme.base") == "dark" else "black"))
     fig.update_traces(hovertemplate="<b>%{label}</b><br>Sayı: %{value}<br>Yüzde: %{percent}")
     return fig
 
@@ -92,30 +76,13 @@ def create_plotly_bar(data, title, top_n=15):
     if data.empty:
         return None
     data_to_plot = data.head(top_n).sort_values(ascending=False).reset_index()
-    data_to_plot.columns = ['Konu', 'Sayı']
-    
-    fig = px.bar(
-        data_to_plot, 
-        x='Sayı', 
-        y='Konu', 
-        orientation='h', 
-        title=title,
-        labels={'Sayı': 'Karar Sayısı', 'Konu': ''},
-        color='Sayı',  # Barların rengini sayısına göre değiştir
-        color_continuous_scale=px.colors.sequential.Teal, # Şık bir renk skalası
-        text='Sayı' # Barların üzerine sayıyı yaz
-    )
-    fig.update_layout(
-        title_x=0.5, 
-        yaxis={'categoryorder':'total ascending'}, # Y eksenini değere göre sırala
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='white' if st.get_option("theme.base") == "dark" else "black")
-    )
+    data_to_plot.columns = ['Kategori', 'Sayı']
+    fig = px.bar(data_to_plot, x='Sayı', y='Kategori', orientation='h', title=title, labels={'Sayı': 'Sayı', 'Kategori': ''}, color='Sayı', color_continuous_scale=px.colors.sequential.Teal, text='Sayı')
+    fig.update_layout(title_x=0.5, yaxis={'categoryorder':'total ascending'}, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='white' if st.get_option("theme.base") == "dark" else "black"))
     return fig
 
+# --- GÜNCELLENEN ANALİZ FONKSİYONU ---
 def analyze_and_prepare_data(script_dir):
-    # ... (Bu fonksiyonda değişiklik yok) ...
     try:
         dosya_adi = os.path.join(script_dir, "sorumlu.xlsx")
         df = pd.read_excel(dosya_adi, sheet_name='VERİ-2-EMİR', header=0, dtype=str).fillna('')
@@ -132,7 +99,8 @@ def analyze_and_prepare_data(script_dir):
             "azinlik_oyu": df['Azinlik_Oyu_Temiz'].value_counts(),
             "karar_konusu": df['Karar_Konusu'].value_counts(),
             "kamu_zarari": df['_KamuZarariVar'].value_counts().rename({True: 'Kamu Zararı Var', False: 'Kamu Zararı Yok'}),
-            "unvan_analizi": None
+            "unvan_analizi": None,
+            "sorumlu_sayilari": None # Yeni analiz için anahtar eklendi
         }
         
         analiz_listesi = []
@@ -146,7 +114,10 @@ def analyze_and_prepare_data(script_dir):
             if 'Kamu Zararı Yok' not in ozet_tablo_unvan: ozet_tablo_unvan['Kamu Zararı Yok'] = 0
             ozet_tablo_unvan['Toplam'] = ozet_tablo_unvan.sum(axis=1)
             ozet_tablo_unvan['KZ Oranı %'] = ((ozet_tablo_unvan['Kamu Zararı Var'] / ozet_tablo_unvan['Toplam']) * 100).round(1)
+            
+            # Yeni analiz sonuçlarını sözlüğe ekle
             analysis_results["unvan_analizi"] = ozet_tablo_unvan.sort_values(by='Toplam', ascending=False)
+            analysis_results["sorumlu_sayilari"] = ozet_tablo_unvan['Toplam'].sort_values(ascending=False)
             
         return analysis_results
     except Exception as e:
@@ -171,7 +142,6 @@ def generate_excel_report(analysis_results):
     except Exception as e:
         st.error(f"Excel raporu oluşturulurken bir hata oluştu: {e}")
         return None
-
 
 # ==============================================================================
 # BÖLÜM 3: GENEL UYGULAMA YAPISI VE AYARLAR
@@ -337,8 +307,19 @@ elif selected_tool == "Toplu Veri Analizi ve Raporlama":
         with st.expander("Tüm Karar Konularını ve Sayılarını Gör"):
             st.dataframe(results['karar_konusu'])
 
+        # --- YENİ EKLENEN BÖLÜM ---
         st.markdown("---")
-        st.markdown("#### Unvanlara Göre Kamu Zararı Analizi")
+        st.markdown("#### En Sık Sorumlu Tutulan Unvanlar")
+        if results['sorumlu_sayilari'] is not None:
+            fig_sorumlu = create_plotly_bar(results['sorumlu_sayilari'], "En Sık Sorumlu Tutulan 15 Unvan", top_n=15)
+            if fig_sorumlu:
+                st.plotly_chart(fig_sorumlu, use_container_width=True)
+        else:
+            st.info("Sorumlu unvan analizi için veri bulunamadı.")
+        # --- YENİ BÖLÜM SONU ---
+
+        st.markdown("---")
+        st.markdown("#### Unvanlara Göre Kamu Zararı Detayları")
         if results['unvan_analizi'] is not None:
             st.dataframe(results['unvan_analizi'])
         else:
