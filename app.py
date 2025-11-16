@@ -136,7 +136,7 @@ def analyze_and_prepare_data(script_dir):
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
-    gemini_model = genai.GenerativeModel('gemini-1.5-pro-latest')
+    gemini_model = genai.GenerativeModel('gemini-2.5-pro-preview-03-25')
 except Exception as e:
     st.error(f"Gemini API anahtarı yüklenirken bir hata oluştu: {e}")
     gemini_model = None
@@ -300,3 +300,4 @@ elif selected_tool == "Toplu Veri Analizi ve Raporlama":
                 
     else:
         st.error("Analiz verileri yüklenemedi. Lütfen 'sorumlu.xlsx' dosyasının formatını ve içeriğini kontrol edin.")
+
