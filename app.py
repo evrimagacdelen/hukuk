@@ -132,11 +132,10 @@ def analyze_and_prepare_data(script_dir):
 # ==============================================================================
 # BÖLÜM 3: GENEL UYGULAMA YAPISI VE AYARLAR
 # ==============================================================================
-# --- DEĞİŞİKLİK 1: GEMINI MODELİNİ DOĞRU YÜKLEME ---
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
-    # Model adıyla bir model nesnesi oluştur
+    # --- DEĞİŞİKLİK: GEÇERLİ GEMINI MODELİ KULLANILDI ---
     gemini_model = genai.GenerativeModel('models/gemini-1.5-pro-latest') 
 except Exception as e:
     st.error(f"Gemini API anahtarı yüklenirken bir hata oluştu: {e}")
@@ -184,13 +183,11 @@ def find_full_text(df, input_text):
     mask = df['GİRİŞ'].str.strip().str.startswith(input_text.strip(), na=False)
     return df.loc[mask, 'Tam Metin'].iloc[0] if mask.any() else None
 
-# --- DEĞİŞİKLİK 2: GEMINI FONKSİYONUNU DOĞRU ÇAĞIRMA ---
 def get_gemini_summary(text):
     if gemini_model is None: 
         return "Gemini modeli yüklenemediği için özet oluşturulamadı."
     try:
         prompt = f"""Aşağıdaki hukuki metni analiz et ve ana konuyu, tarafların temel argümanlarını ve olayın sonucunu (eğer belirtilmişse) vurgulayan kısa ve anlaşılır bir özet çıkar. Özet, hukuki terimlerden arındırılmış ve herkesin anlayabileceği bir dilde olmalıdır. Metin: "{text}" Özet: """
-        # Doğru kullanım: model_nesnesi.generate_content()
         response = gemini_model.generate_content(prompt)
         return response.text
     except Exception as e:
@@ -240,13 +237,10 @@ if selected_tool == "Bireysel Dava Metni Analizi":
                     st.info("İlişkili bir kanun bulunamadı.")
                 st.markdown("---")
                 st.markdown("##### 💸 Kamu Zararı Durumu:")
-                
-                # --- DEĞİŞİKLİK 3: ST.ERROR/ST.INFO DÜZELTMESİ ---
                 if st.session_state.damage == "VAR":
                     st.error(f"**{st.session_state.damage}**")
                 else:
                     st.info(f"**{st.session_state.damage}**")
-                
                 st.markdown("---")
                 st.markdown("##### 🤖 Gemini AI Metin Özeti:")
                 with st.expander("Özeti Göster", expanded=True):
