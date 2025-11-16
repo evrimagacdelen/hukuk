@@ -82,7 +82,6 @@ def create_plotly_bar(df, title, top_n=15):
     fig.update_layout(height=500, title_x=0.5, yaxis={'categoryorder':'total ascending'}, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='white' if st.get_option("theme.base") == "dark" else "black"))
     return fig
 
-# --- MESAJLARI KALDIRILMIŞ ANALİZ FONKSİYONU ---
 @st.cache_data
 def analyze_and_prepare_data(script_dir):
     try:
@@ -111,7 +110,6 @@ def analyze_and_prepare_data(script_dir):
             "azinlik_oyu": df_azinlik_oyu,
             "karar_konusu": df_karar_konusu,
             "kamu_zarari": df_kamu_zarari,
-            "unvan_analizi": None,
             "sorumlu_sayilari": None
         }
         
@@ -119,16 +117,9 @@ def analyze_and_prepare_data(script_dir):
         for _, satir in df.dropna(subset=['Sorumlular_Metni']).iterrows():
             unvanlar = cerrahi_analiz_tek_satir(satir['Sorumlular_Metni'])
             for unvan in unvanlar:
-                analiz_listesi.append({'Unvan': unvan, 'Zarar_Durumu': satir['_KamuZarariVar']})
+                analiz_listesi.append({'Unvan': unvan})
         if analiz_listesi:
-            ozet_tablo_unvan = pd.DataFrame(analiz_listesi).groupby('Unvan')['Zarar_Durumu'].value_counts().unstack(fill_value=0).rename(columns={True:'Kamu Zararı Var', False:'Kamu Zararı Yok'})
-            if 'Kamu Zararı Var' not in ozet_tablo_unvan: ozet_tablo_unvan['Kamu Zararı Var'] = 0
-            if 'Kamu Zararı Yok' not in ozet_tablo_unvan: ozet_tablo_unvan['Kamu Zararı Yok'] = 0
-            ozet_tablo_unvan['Toplam'] = ozet_tablo_unvan.sum(axis=1)
-            ozet_tablo_unvan['KZ Oranı %'] = ((ozet_tablo_unvan['Kamu Zararı Var'] / ozet_tablo_unvan['Toplam']) * 100).round(1)
-            analysis_results["unvan_analizi"] = ozet_tablo_unvan.sort_values(by='Toplam', ascending=False)
-            
-            df_sorumlu_sayilari = ozet_tablo_unvan[['Toplam']].sort_values(by='Toplam', ascending=False).reset_index()
+            df_sorumlu_sayilari = pd.DataFrame(analiz_listesi)['Unvan'].value_counts().reset_index()
             df_sorumlu_sayilari.columns = ['Unvan', 'Frekans']
             analysis_results["sorumlu_sayilari"] = df_sorumlu_sayilari
             
@@ -219,7 +210,6 @@ if selected_tool == "Bireysel Dava Metni Analizi":
     if models_bundle is None or df_data is None:
         st.warning("Bireysel analiz aracı için gerekli model veya veri dosyaları yüklenemedi.")
     else:
-        # ... (Bireysel analiz UI kısmı aynı) ...
         law_model, damage_model, vectorizer_laws, vectorizer_damage, mlb_classes = (
             models_bundle['law_model'], models_bundle['damage_model'], 
             models_bundle['vectorizer_laws'], models_bundle['vectorizer_damage'], 
@@ -257,10 +247,7 @@ if selected_tool == "Bireysel Dava Metni Analizi":
 
 elif selected_tool == "Toplu Veri Analizi ve Raporlama":
     
-    # --- YENİLENEN OTOMATİK ANALİZ BÖLÜMÜ ---
     script_dir = os.path.dirname(os.path.realpath(__file__))
-    
-    # @st.cache_data sayesinde bu fonksiyon sadece bir kez çalışır, sonuçlar hafızaya alınır.
     results = analyze_and_prepare_data(script_dir)
 
     if results:
@@ -296,7 +283,7 @@ elif selected_tool == "Toplu Veri Analizi ve Raporlama":
             fig_konu = create_plotly_bar(results['karar_konusu'], "En Sık Görülen 15 Karar Konusu")
             if fig_konu: st.plotly_chart(fig_konu, use_container_width=True)
         with col2:
-            st.dataframe(results['karar_konusu'].head(15)) # Uzun listeler için dataframe daha iyi
+            st.table(results['karar_konusu'].head(15)) # dataframe yerine table
         with st.expander("Tüm Karar Konularını ve Sayılarını Gör"):
             st.dataframe(results['karar_konusu'])
 
@@ -311,13 +298,7 @@ elif selected_tool == "Toplu Veri Analizi ve Raporlama":
                 st.info("Sorumlu unvan analizi için veri bulunamadı.")
         with col2:
             if results['sorumlu_sayilari'] is not None:
-                st.dataframe(results['sorumlu_sayilari'].head(15))
-
-        st.markdown("---")
-        st.markdown("#### Unvanlara Göre Kamu Zararı Detayları")
-        if results['unvan_analizi'] is not None:
-            st.dataframe(results['unvan_analizi'])
-        else:
-            st.info("Unvan analizi için veri bulunamadı.")
+                st.table(results['sorumlu_sayilari'].head(15)) # dataframe yerine table
+                
     else:
         st.error("Analiz verileri yüklenemedi. Lütfen 'sorumlu.xlsx' dosyasının formatını ve içeriğini kontrol edin.")
