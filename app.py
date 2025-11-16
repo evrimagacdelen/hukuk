@@ -72,17 +72,25 @@ def create_plotly_pie(data, title):
     fig.update_traces(hovertemplate="<b>%{label}</b><br>Sayı: %{value}<br>Yüzde: %{percent}")
     return fig
 
+# --- GÜNCELLENEN BAR PLOT FONKSİYONU ---
 def create_plotly_bar(data, title, top_n=15):
     if data.empty:
         return None
     data_to_plot = data.head(top_n).sort_values(ascending=False).reset_index()
     data_to_plot.columns = ['Kategori', 'Sayı']
-    fig = px.bar(data_to_plot, x='Sayı', y='Kategori', orientation='h', title=title, labels={'Sayı': 'Sayı', 'Kategori': ''}, color='Sayı', color_continuous_scale=px.colors.sequential.Teal, text='Sayı')
-    fig.update_layout(title_x=0.5, yaxis={'categoryorder':'total ascending'}, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='white' if st.get_option("theme.base") == "dark" else "black"))
+    fig = px.bar(data_to_plot, x='Sayı', y='Kategori', orientation='h', title=title, labels={'Sayı': 'Karar Sayısı', 'Kategori': ''}, color='Sayı', color_continuous_scale=px.colors.sequential.Teal, text='Sayı')
+    fig.update_layout(
+        title_x=0.5, 
+        yaxis={'categoryorder':'total ascending'}, 
+        paper_bgcolor='rgba(0,0,0,0)', 
+        plot_bgcolor='rgba(0,0,0,0)', 
+        font=dict(color='white' if st.get_option("theme.base") == "dark" else "black"),
+        height=700  # Grafiğin yüksekliğini artır
+    )
     return fig
 
-# --- GÜNCELLENEN ANALİZ FONKSİYONU ---
 def analyze_and_prepare_data(script_dir):
+    # ... (Bu fonksiyonda değişiklik yok) ...
     try:
         dosya_adi = os.path.join(script_dir, "sorumlu.xlsx")
         df = pd.read_excel(dosya_adi, sheet_name='VERİ-2-EMİR', header=0, dtype=str).fillna('')
@@ -100,7 +108,7 @@ def analyze_and_prepare_data(script_dir):
             "karar_konusu": df['Karar_Konusu'].value_counts(),
             "kamu_zarari": df['_KamuZarariVar'].value_counts().rename({True: 'Kamu Zararı Var', False: 'Kamu Zararı Yok'}),
             "unvan_analizi": None,
-            "sorumlu_sayilari": None # Yeni analiz için anahtar eklendi
+            "sorumlu_sayilari": None
         }
         
         analiz_listesi = []
@@ -114,8 +122,6 @@ def analyze_and_prepare_data(script_dir):
             if 'Kamu Zararı Yok' not in ozet_tablo_unvan: ozet_tablo_unvan['Kamu Zararı Yok'] = 0
             ozet_tablo_unvan['Toplam'] = ozet_tablo_unvan.sum(axis=1)
             ozet_tablo_unvan['KZ Oranı %'] = ((ozet_tablo_unvan['Kamu Zararı Var'] / ozet_tablo_unvan['Toplam']) * 100).round(1)
-            
-            # Yeni analiz sonuçlarını sözlüğe ekle
             analysis_results["unvan_analizi"] = ozet_tablo_unvan.sort_values(by='Toplam', ascending=False)
             analysis_results["sorumlu_sayilari"] = ozet_tablo_unvan['Toplam'].sort_values(ascending=False)
             
@@ -287,17 +293,18 @@ elif selected_tool == "Toplu Veri Analizi ve Raporlama":
         st.subheader("📊 Analiz Sonuçları ve Görseller")
         results = st.session_state.analysis_results
         
+        # --- YENİLENEN GENİŞ PASTA GRAFİĞİ YERLEŞİMİ ---
         st.markdown("#### Genel Karar Dağılımları")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            fig = create_plotly_pie(results['karar_turu'], "Karar Türü Dağılımı")
-            if fig: st.plotly_chart(fig, use_container_width=True)
-        with col2:
-            fig = create_plotly_pie(results['kamu_zarari'], "Kamu Zararı Dağılımı")
-            if fig: st.plotly_chart(fig, use_container_width=True)
-        with col3:
-            fig = create_plotly_pie(results['azinlik_oyu'], "Azınlık Oyu Dağılımı")
-            if fig: st.plotly_chart(fig, use_container_width=True)
+        
+        fig_karar_turu = create_plotly_pie(results['karar_turu'], "Karar Türü Dağılımı")
+        if fig_karar_turu: st.plotly_chart(fig_karar_turu, use_container_width=True)
+
+        fig_kamu_zarari = create_plotly_pie(results['kamu_zarari'], "Kamu Zararı Dağılımı")
+        if fig_kamu_zarari: st.plotly_chart(fig_kamu_zarari, use_container_width=True)
+
+        fig_azinlik_oyu = create_plotly_pie(results['azinlik_oyu'], "Azınlık Oyu Dağılımı")
+        if fig_azinlik_oyu: st.plotly_chart(fig_azinlik_oyu, use_container_width=True)
+        # --- YERLEŞİM DEĞİŞİKLİĞİ SONU ---
 
         st.markdown("---")
         st.markdown("#### En Sık Görülen Karar Konuları")
@@ -307,16 +314,14 @@ elif selected_tool == "Toplu Veri Analizi ve Raporlama":
         with st.expander("Tüm Karar Konularını ve Sayılarını Gör"):
             st.dataframe(results['karar_konusu'])
 
-        # --- YENİ EKLENEN BÖLÜM ---
         st.markdown("---")
         st.markdown("#### En Sık Sorumlu Tutulan Unvanlar")
         if results['sorumlu_sayilari'] is not None:
-            fig_sorumlu = create_plotly_bar(results['sorumlu_sayilari'], "En Sık Sorumlu Tutulan 15 Unvan", top_n=15)
+            fig_sorumlu = create_plotly_bar(results['sorumlu_sayilari'], "En Sık Sorumlu Tutulan 15 Unvan")
             if fig_sorumlu:
                 st.plotly_chart(fig_sorumlu, use_container_width=True)
         else:
             st.info("Sorumlu unvan analizi için veri bulunamadı.")
-        # --- YENİ BÖLÜM SONU ---
 
         st.markdown("---")
         st.markdown("#### Unvanlara Göre Kamu Zararı Detayları")
