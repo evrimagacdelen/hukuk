@@ -38,8 +38,8 @@ class CustomLawClassifier(BaseEstimator, ClassifierMixin):
 # ==============================================================================
 # BÖLÜM 2: GÖRSELLEŞTİRME VE ANALİZ İÇİN FONKSİYONLAR
 # ==============================================================================
+# ... (Bu bölümde değişiklik yok) ...
 def cerrahi_analiz_tek_satir(metin):
-    # ... (Bu fonksiyonda değişiklik yok) ...
     BILINEN_UNVANLAR = sorted(['Harcama Yetkilisi', 'Gerçekleştirme Görevlisi', 'Muhasebe Yetkilisi', 'Üst Yönetici', 'Akademik Teşvik Komisyonu', 'Üniversite Yönetim Kurulu', 'Döner Sermaye Yürütme Kurulu', 'Fakülte Yönetim Kurulu', 'İtiraz Komisyonu', 'Birim Komisyon', 'Jüri', 'Üniversite Senatosu', 'Personel Daire Başkanı', 'Strateji Geliştirme Daire Başkanı', 'İdari ve Mali İşler Daire Başkanı', 'Sağlık Kültür ve Spor Daire Başkanı', 'Döner Sermaye İşletme Müdürü', 'Hastane Başmüdürü', 'Hukuk Müşaviri', 'Fakülte Sekreteri', 'Enstitü Sekreteri', 'Yüksekokul Sekreteri', 'Rektör Yardımcısı', 'Dekan Yardımcısı', 'Başhekim Yardımcısı', 'Müdür Yardımcısı', 'Yüksekokul Müdürü', 'Enstitü Müdürü', 'Merkez Müdürü', 'Şube Müdürü', 'Hastane Müdürü', 'Daire Başkanı', 'Rektör', 'Dekan', 'Başhekim', 'Genel Sekreter', 'Müdür', 'Memur', 'Şef', 'Tekniker', 'Sayman', 'Bilgisayar İşletmeni', 'Öğretim Üyesi', 'Başkan'], key=len, reverse=True)
     AKADEMIK_DESENLER = {'Prof. Dr.': r'prof\s*\.\s*dr', 'Doç. Dr.': r'doç\s*\.\s*dr', 'Yrd. Doç. Dr.': r'yrd\s*\.\s*doç\s*\.\s*dr', 'Dr. Öğr. Üyesi': r'dr\s*\.\s*öğr\s*\.\s*üyesi', 'Öğr. Gör.': r'öğr\s*\.\s*gör', 'Dr.': r'\bdr\b'}
     NORM_MAP = {'hy': 'Harcama Yetkilisi', 'gg': 'Gerçekleştirme Görevlisi', 'dekan v.': 'Dekan Vekili', 'dekan v': 'Dekan Vekili', 'rektör yrd.': 'Rektör Yardımcısı', 'rektör yrd': 'Rektör Yardımcısı', 'müdür v.': 'Müdür Vekili', 'müdür v': 'Müdür Vekili', 'müdür yrd.': 'Müdür Yardımcısı', 'müdür yrd': 'Müdür Yardımcısı', 'fakülte sekreter v.': 'Fakülte Sekreteri Vekili', 'fakülte sekreter v': 'Fakülte Sekreteri Vekili', 'fakülte sekreterv': 'Fakülte Sekreteri Vekili', 'fakül. sekr. vekili': 'Fakülte Sekreteri Vekili', 'yüksekokul sekreter v.': 'Yüksekokul Sekreteri Vekili', 'yüksekokul sekreter v': 'Yüksekokul Sekreteri Vekili', 'yüksekokul sek. v': 'Yüksekokul Sekreteri Vekili', 'genel sekreter v.': 'Genel Sekreter Vekili', 'genel sekreter v': 'Genel Sekreter Vekili', 'döner ser. işl. md. v.': 'Döner Sermaye İşletme Müdürü Vekili', 'işletme müd. v.': 'İşletme Müdürü Vekili', 'hastane md. yrd': 'Hastane Müdür Yardımcısı', 'has. baş müd.': 'Hastane Başmüdürü', 'üyk': 'Üniversite Yönetim Kurulu', 'dsyk': 'Döner Sermaye Yürütme Kurulu'}
@@ -132,11 +132,12 @@ def analyze_and_prepare_data(script_dir):
 # ==============================================================================
 # BÖLÜM 3: GENEL UYGULAMA YAPISI VE AYARLAR
 # ==============================================================================
-# ... (Bu bölümde değişiklik yok) ...
+# --- DEĞİŞİKLİK 1: GEMINI MODELİNİ DOĞRU YÜKLEME ---
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
-    gemini_model = genai.GenerativeModel('gemini-2.5-pro-preview-03-25')
+    # Model adıyla bir model nesnesi oluştur
+    gemini_model = genai.GenerativeModel('models/gemini-1.5-pro-latest') 
 except Exception as e:
     st.error(f"Gemini API anahtarı yüklenirken bir hata oluştu: {e}")
     gemini_model = None
@@ -183,11 +184,14 @@ def find_full_text(df, input_text):
     mask = df['GİRİŞ'].str.strip().str.startswith(input_text.strip(), na=False)
     return df.loc[mask, 'Tam Metin'].iloc[0] if mask.any() else None
 
+# --- DEĞİŞİKLİK 2: GEMINI FONKSİYONUNU DOĞRU ÇAĞIRMA ---
 def get_gemini_summary(text):
-    if gemini_model is None: return "Gemini modeli yüklenemediği için özet oluşturulamadı."
+    if gemini_model is None: 
+        return "Gemini modeli yüklenemediği için özet oluşturulamadı."
     try:
         prompt = f"""Aşağıdaki hukuki metni analiz et ve ana konuyu, tarafların temel argümanlarını ve olayın sonucunu (eğer belirtilmişse) vurgulayan kısa ve anlaşılır bir özet çıkar. Özet, hukuki terimlerden arındırılmış ve herkesin anlayabileceği bir dilde olmalıdır. Metin: "{text}" Özet: """
-        response = genai.generate_content(prompt)
+        # Doğru kullanım: model_nesnesi.generate_content()
+        response = gemini_model.generate_content(prompt)
         return response.text
     except Exception as e:
         return f"Gemini özetleme sırasında bir hata oluştu: {e}"
@@ -236,7 +240,13 @@ if selected_tool == "Bireysel Dava Metni Analizi":
                     st.info("İlişkili bir kanun bulunamadı.")
                 st.markdown("---")
                 st.markdown("##### 💸 Kamu Zararı Durumu:")
-                st.error(f"**{st.session_state.damage}**") if st.session_state.damage == "VAR" else st.info(f"**{st.session_state.damage}**")
+                
+                # --- DEĞİŞİKLİK 3: ST.ERROR/ST.INFO DÜZELTMESİ ---
+                if st.session_state.damage == "VAR":
+                    st.error(f"**{st.session_state.damage}**")
+                else:
+                    st.info(f"**{st.session_state.damage}**")
+                
                 st.markdown("---")
                 st.markdown("##### 🤖 Gemini AI Metin Özeti:")
                 with st.expander("Özeti Göster", expanded=True):
@@ -300,4 +310,3 @@ elif selected_tool == "Toplu Veri Analizi ve Raporlama":
                 
     else:
         st.error("Analiz verileri yüklenemedi. Lütfen 'sorumlu.xlsx' dosyasının formatını ve içeriğini kontrol edin.")
-
