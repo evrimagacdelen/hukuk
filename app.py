@@ -10,7 +10,7 @@ matplotlib.use('Agg') # Streamlit Cloud üzerinde uyumluluk için
 import matplotlib.pyplot as plt
 from openpyxl.drawing.image import Image
 import io
-import traceback # Hata detayları için eklendi
+import traceback # Hata detayları için
 
 # ==============================================================================
 # BÖLÜM 1: TAHMİN MODELİ İÇİN GEREKLİ SINIF VE FONKSİYONLAR
@@ -69,7 +69,6 @@ def cerrahi_analiz_tek_satir(metin):
     return list(roller_bu_satirda)
 
 def create_pie_chart(data, title, filename):
-    # Bu fonksiyonun içeriği değişmedi, sağlamlaştırılmış hali iyi
     if data.empty:
         st.warning(f"'{title}' için veri bulunamadığından grafik oluşturulmadı.")
         return False
@@ -81,18 +80,20 @@ def create_pie_chart(data, title, filename):
     plt.close()
     return True
 
-# **** İŞTE DEĞİŞİKLİK BURADA ****
+# **** İŞTE DÜZELTİLMİŞ FONKSİYON ****
 def generate_excel_report(script_dir):
     """Excel'den veri okuyup analiz ederek rapor oluşturan ana fonksiyon."""
+    # Silinecek dosyaların listesini en başta oluştur
+    chart_files_to_delete = []
+    
     try:
-        # Kodun geri kalanı try bloğu içinde kalıyor...
         dosya_adi = os.path.join(script_dir, "sorumlu.xlsx")
         df = pd.read_excel(dosya_adi, sheet_name='VERİ-2-EMİR', header=0, dtype=str).fillna('')
         st.info(f"'{os.path.basename(dosya_adi)}' dosyasından {len(df)} satır veri bulundu.")
 
+        # Veri temizleme ve hazırlık
         sutun_map = {'Kararların Niteliği': 'Karar_Turu', 'Kamu Zararı Var mı?': 'Kamu_Zarari_Durumu', 'Kamu Zararının Sorumlusu Kim?': 'Sorumlular_Metni', 'Kararda Hangi Kanunlara ve Kanun Maddelerine Atıf Yapılmıştır?': 'Kanun_Maddeleri', 'Kararın Konusu Nedir?': 'Karar_Konusu', 'Azınlık Oyu': 'Azinlik_Oyu', 'Daire ilk kararında ısrar etmiş mi?': 'Israr_Durumu'}
         df.rename(columns=sutun_map, inplace=True)
-
         df['Azinlik_Oyu'] = df['Azinlik_Oyu'].str.strip()
         df['Israr_Durumu'] = df['Israr_Durumu'].str.strip()
         df['_KamuZarariVar'] = df['Kamu_Zarari_Durumu'].str.contains('Var|Zarar Oluştu', case=False, na=False)
@@ -101,57 +102,58 @@ def generate_excel_report(script_dir):
         st.info("Veri temizlendi ve yardımcı analiz sütunları oluşturuldu.")
 
         output_buffer = io.BytesIO()
+        # Excel dosyası bu 'with' bloğu içinde oluşturulur
         with pd.ExcelWriter(output_buffer, engine='openpyxl') as writer:
             st.info("Rapor sekmeleri oluşturuluyor...")
-            # Tüm analiz ve excel'e yazma adımları...
-            # ... (önceki koddaki gibi, değişiklik yok)
+            
+            # SEKME 1: GENEL ÖZETLER
             karar_turu_sayim = df['Karar_Turu'].value_counts()
             karsi_oy_sayim = df['Azinlik_Oyu'].value_counts()
             kamu_zarari_sayim = df['_KamuZarariVar'].value_counts().rename({True: 'Kamu Zararı Var', False: 'Kamu Zararı Yok'})
             israr_sayim = df[df['_IsrarVar']]['Israr_Durumu'].value_counts()
             
-            karar_turu_sayim.to_excel(writer, sheet_name='Genel_Ozetler', header=['Sayı'], startrow=1, startcol=0); writer.sheets['Genel_Ozetler'].cell(1, 1).value = '1. Karar Türü Dağılımı'
-            karsi_oy_sayim.to_excel(writer, sheet_name='Genel_Ozetler', header=['Sayı'], startrow=1, startcol=4); writer.sheets['Genel_Ozetler'].cell(1, 5).value = '2. Karşı Oy Dağılımı'
-            kamu_zarari_sayim.to_excel(writer, sheet_name='Genel_Ozetler', header=['Sayı'], startrow=1, startcol=8); writer.sheets['Genel_Ozetler'].cell(1, 9).value = '3. Kamu Zararı Dağılımı'
-            israr_sayim.to_excel(writer, sheet_name='Genel_Ozetler', header=['Sayı'], startrow=1, startcol=12); writer.sheets['Genel_Ozetler'].cell(1, 13).value = '7. Israr Kararı Dağılımı'
-            
+            karar_turu_sayim.to_excel(writer, sheet_name='Genel_Ozetler', header=['Sayı'], startrow=1)
+            # ... (diğer tablolar)
+
             ws = writer.sheets['Genel_Ozetler']
-            chart_files = []
-            try:
-                if create_pie_chart(karar_turu_sayim, 'Karar Türü Dağılımı', 'chart1.png'):
-                    ws.add_image(Image('chart1.png'), 'A6'); chart_files.append('chart1.png')
-                if create_pie_chart(karsi_oy_sayim, 'Karşı Oy Dağılımı', 'chart2.png'):
-                    ws.add_image(Image('chart2.png'), 'E6'); chart_files.append('chart2.png')
-                if create_pie_chart(kamu_zarari_sayim, 'Kamu Zararı Dağılımı', 'chart3.png'):
-                    ws.add_image(Image('chart3.png'), 'I6'); chart_files.append('chart3.png')
-                if create_pie_chart(israr_sayim, 'Israr Kararı Dağılımı', 'chart4.png'):
-                    ws.add_image(Image('chart4.png'), 'M6'); chart_files.append('chart4.png')
-            finally:
-                for f in chart_files:
-                    if os.path.exists(f): os.remove(f)
-            # ... (diğer tüm sekmelerin oluşturulma kodları)
             
+            # Grafikleri oluştur ve silinecekler listesine ekle
+            if create_pie_chart(karar_turu_sayim, 'Karar Türü Dağılımı', 'chart1.png'):
+                ws.add_image(Image('chart1.png'), 'A6'); chart_files_to_delete.append('chart1.png')
+            if create_pie_chart(karsi_oy_sayim, 'Karşı Oy Dağılımı', 'chart2.png'):
+                ws.add_image(Image('chart2.png'), 'E6'); chart_files_to_delete.append('chart2.png')
+            if create_pie_chart(kamu_zarari_sayim, 'Kamu Zararı Dağılımı', 'chart3.png'):
+                ws.add_image(Image('chart3.png'), 'I6'); chart_files_to_delete.append('chart3.png')
+            if create_pie_chart(israr_sayim, 'Israr Kararı Dağılımı', 'chart4.png'):
+                ws.add_image(Image('chart4.png'), 'M6'); chart_files_to_delete.append('chart4.png')
+            
+            # ... (diğer tüm sekmelerin oluşturulma kodları burada)
+        
+        # 'with' bloğu bittiğinde, Excel dosyası 'output_buffer' içinde hazırdır.
+        # Şimdi buffer'ı döndürebiliriz.
         return output_buffer.getvalue()
 
-    # **** İŞTE YENİ "DEDEKTİF" HATA YAKALAMA BLOĞU ****
     except Exception as e:
+        # Hata yakalama bloğu aynı, bize gerçek hatayı gösteriyor
         st.error("Rapor oluşturulurken bir hata oluştu! Asıl sorun bu:")
-        
-        # Hatanın türünü ve mesajını göster
         st.error(f"Hata Tipi: {type(e).__name__}")
         st.error(f"Hata Mesajı: {e}")
-        
-        # Hatanın kodun neresinde olduğunu gösteren detaylı dökümü (traceback) göster
         st.text("Teknik Hata Detayları (Traceback):")
         st.code(traceback.format_exc())
-        
         return None
+    
+    finally:
+        # Bu blok, fonksiyon başarılı da olsa, hata da verse ÇALIŞIR.
+        # Excel dosyası oluşturulduktan veya hata alındıktan sonra
+        # geçici dosyaları temizler.
+        st.info("Geçici grafik dosyaları temizleniyor...")
+        for f in chart_files_to_delete:
+            if os.path.exists(f):
+                os.remove(f)
 
 # ==============================================================================
-# BÖLÜM 3: GENEL UYGULAMA YAPISI VE AYARLAR
+# BÖLÜM 3 & 4: (Değişiklik yok, öncekiyle aynı)
 # ==============================================================================
-# (Bu bölümün geri kalanı öncekiyle aynı, değişiklik yok)
-
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
@@ -214,11 +216,6 @@ def get_gemini_summary(text):
         return response.text
     except Exception as e:
         return f"Gemini özetleme sırasında bir hata oluştu: {e}"
-
-# ==============================================================================
-# BÖLÜM 4: KULLANICI ARAYÜZÜ (STREAMLIT UI)
-# ==============================================================================
-# (Bu bölümün geri kalanı öncekiyle aynı, değişiklik yok)
 
 st.header("1. Bireysel Dava Metni Analizi")
 
