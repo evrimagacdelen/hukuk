@@ -68,25 +68,17 @@ def create_plotly_pie(data, title):
     if data.empty:
         return None
     fig = px.pie(data, values=data.values, names=data.index, title=title, hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
-    fig.update_layout(title_x=0.5, legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='white' if st.get_option("theme.base") == "dark" else "black"))
+    fig.update_layout(height=400, title_x=0.5, legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='white' if st.get_option("theme.base") == "dark" else "black"))
     fig.update_traces(hovertemplate="<b>%{label}</b><br>Sayı: %{value}<br>Yüzde: %{percent}")
     return fig
 
-# --- GÜNCELLENEN BAR PLOT FONKSİYONU ---
 def create_plotly_bar(data, title, top_n=15):
     if data.empty:
         return None
     data_to_plot = data.head(top_n).sort_values(ascending=False).reset_index()
     data_to_plot.columns = ['Kategori', 'Sayı']
     fig = px.bar(data_to_plot, x='Sayı', y='Kategori', orientation='h', title=title, labels={'Sayı': 'Karar Sayısı', 'Kategori': ''}, color='Sayı', color_continuous_scale=px.colors.sequential.Teal, text='Sayı')
-    fig.update_layout(
-        title_x=0.5, 
-        yaxis={'categoryorder':'total ascending'}, 
-        paper_bgcolor='rgba(0,0,0,0)', 
-        plot_bgcolor='rgba(0,0,0,0)', 
-        font=dict(color='white' if st.get_option("theme.base") == "dark" else "black"),
-        height=700  # Grafiğin yüksekliğini artır
-    )
+    fig.update_layout(height=500, title_x=0.5, yaxis={'categoryorder':'total ascending'}, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='white' if st.get_option("theme.base") == "dark" else "black"))
     return fig
 
 def analyze_and_prepare_data(script_dir):
@@ -148,6 +140,7 @@ def generate_excel_report(analysis_results):
     except Exception as e:
         st.error(f"Excel raporu oluşturulurken bir hata oluştu: {e}")
         return None
+
 
 # ==============================================================================
 # BÖLÜM 3: GENEL UYGULAMA YAPISI VE AYARLAR
@@ -293,35 +286,58 @@ elif selected_tool == "Toplu Veri Analizi ve Raporlama":
         st.subheader("📊 Analiz Sonuçları ve Görseller")
         results = st.session_state.analysis_results
         
-        # --- YENİLENEN GENİŞ PASTA GRAFİĞİ YERLEŞİMİ ---
         st.markdown("#### Genel Karar Dağılımları")
         
-        fig_karar_turu = create_plotly_pie(results['karar_turu'], "Karar Türü Dağılımı")
-        if fig_karar_turu: st.plotly_chart(fig_karar_turu, use_container_width=True)
+        # --- YENİLENEN GRAFİK + TABLO YERLEŞİMİ ---
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            fig_karar_turu = create_plotly_pie(results['karar_turu'], "Karar Türü Dağılımı")
+            if fig_karar_turu: st.plotly_chart(fig_karar_turu, use_container_width=True)
+        with col2:
+            st.write("Veri Detayları")
+            st.dataframe(results['karar_turu'])
 
-        fig_kamu_zarari = create_plotly_pie(results['kamu_zarari'], "Kamu Zararı Dağılımı")
-        if fig_kamu_zarari: st.plotly_chart(fig_kamu_zarari, use_container_width=True)
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            fig_kamu_zarari = create_plotly_pie(results['kamu_zarari'], "Kamu Zararı Dağılımı")
+            if fig_kamu_zarari: st.plotly_chart(fig_kamu_zarari, use_container_width=True)
+        with col2:
+            st.write("Veri Detayları")
+            st.dataframe(results['kamu_zarari'])
 
-        fig_azinlik_oyu = create_plotly_pie(results['azinlik_oyu'], "Azınlık Oyu Dağılımı")
-        if fig_azinlik_oyu: st.plotly_chart(fig_azinlik_oyu, use_container_width=True)
-        # --- YERLEŞİM DEĞİŞİKLİĞİ SONU ---
-
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            fig_azinlik_oyu = create_plotly_pie(results['azinlik_oyu'], "Azınlık Oyu Dağılımı")
+            if fig_azinlik_oyu: st.plotly_chart(fig_azinlik_oyu, use_container_width=True)
+        with col2:
+            st.write("Veri Detayları")
+            st.dataframe(results['azinlik_oyu'])
+        
         st.markdown("---")
         st.markdown("#### En Sık Görülen Karar Konuları")
-        fig = create_plotly_bar(results['karar_konusu'], "En Sık Görülen 15 Karar Konusu")
-        if fig:
-            st.plotly_chart(fig, use_container_width=True)
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            fig_konu = create_plotly_bar(results['karar_konusu'], "En Sık Görülen 15 Karar Konusu")
+            if fig_konu: st.plotly_chart(fig_konu, use_container_width=True)
+        with col2:
+            st.write("Veri Detayları (Top 15)")
+            st.dataframe(results['karar_konusu'].head(15))
         with st.expander("Tüm Karar Konularını ve Sayılarını Gör"):
             st.dataframe(results['karar_konusu'])
 
         st.markdown("---")
         st.markdown("#### En Sık Sorumlu Tutulan Unvanlar")
-        if results['sorumlu_sayilari'] is not None:
-            fig_sorumlu = create_plotly_bar(results['sorumlu_sayilari'], "En Sık Sorumlu Tutulan 15 Unvan")
-            if fig_sorumlu:
-                st.plotly_chart(fig_sorumlu, use_container_width=True)
-        else:
-            st.info("Sorumlu unvan analizi için veri bulunamadı.")
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            if results['sorumlu_sayilari'] is not None:
+                fig_sorumlu = create_plotly_bar(results['sorumlu_sayilari'], "En Sık Sorumlu Tutulan 15 Unvan")
+                if fig_sorumlu: st.plotly_chart(fig_sorumlu, use_container_width=True)
+            else:
+                st.info("Sorumlu unvan analizi için veri bulunamadı.")
+        with col2:
+            st.write("Veri Detayları (Top 15)")
+            if results['sorumlu_sayilari'] is not None:
+                st.dataframe(results['sorumlu_sayilari'].head(15))
 
         st.markdown("---")
         st.markdown("#### Unvanlara Göre Kamu Zararı Detayları")
