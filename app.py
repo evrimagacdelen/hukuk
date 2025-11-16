@@ -5,10 +5,7 @@ import os
 import pandas as pd
 import google.generativeai as genai
 import re
-import matplotlib
-matplotlib.use('Agg') # Streamlit Cloud üzerinde uyumluluk için
-import matplotlib.pyplot as plt
-from openpyxl.drawing.image import Image
+import plotly.express as px  # Matplotlib yerine Plotly Express import edildi
 import io
 import traceback
 
@@ -67,27 +64,39 @@ def cerrahi_analiz_tek_satir(metin):
             elif 'rektör' in temiz_parca: roller_bu_satirda.add('Rektör Vekili')
     return list(roller_bu_satirda)
 
-def create_pie_chart(data, title):
+# --- YENİ PLOTLY GRAFİK FONKSİYONLARI ---
+def create_plotly_pie(data, title):
     if data.empty:
-        return None, False
-    fig, ax = plt.subplots(figsize=(7, 5))
-    ax.pie(data, labels=data.index, autopct='%1.1f%%', startangle=140, 
-           wedgeprops={'edgecolor': 'white'}, textprops={'fontsize': 10})
-    ax.set_title(title, fontsize=14, pad=20, weight='bold')
-    plt.axis('equal')
-    return fig, True
+        return None
+    fig = px.pie(
+        data, 
+        values=data.values, 
+        names=data.index, 
+        title=title,
+        template='seaborn' # Şık bir tema
+    )
+    fig.update_layout(title_x=0.5) # Başlığı ortala
+    return fig
 
-def create_bar_plot(data, title, top_n=15):
+def create_plotly_bar(data, title, top_n=15):
     if data.empty:
-        return None, False
-    data_to_plot = data.head(top_n).sort_values(ascending=True)
-    fig, ax = plt.subplots(figsize=(10, 8))
-    ax.barh(data_to_plot.index, data_to_plot.values, color='skyblue')
-    ax.set_title(title, fontsize=16, pad=20, weight='bold')
-    ax.set_xlabel("Karar Sayısı")
-    plt.tight_layout()
-    return fig, True
+        return None
+    data_to_plot = data.head(top_n).sort_values(ascending=False).reset_index()
+    data_to_plot.columns = ['Konu', 'Sayı']
+    
+    fig = px.bar(
+        data_to_plot, 
+        x='Sayı', 
+        y='Konu', 
+        orientation='h', 
+        title=title,
+        template='seaborn',
+        labels={'Sayı': 'Karar Sayısı', 'Konu': 'Karar Konusu'}
+    )
+    fig.update_layout(title_x=0.5, yaxis={'categoryorder':'total ascending'})
+    return fig
 
+# --- GÜNCELLENEN ANALİZ FONKSİYONU ---
 def analyze_and_prepare_data(script_dir):
     try:
         dosya_adi = os.path.join(script_dir, "sorumlu.xlsx")
@@ -95,16 +104,14 @@ def analyze_and_prepare_data(script_dir):
         st.info(f"'{os.path.basename(dosya_adi)}' dosyasından {len(df)} satır veri bulundu.")
         sutun_map = {'Kararların Niteliği': 'Karar_Turu', 'Kamu Zararı Var mı?': 'Kamu_Zarari_Durumu', 'Kamu Zararının Sorumlusu Kim?': 'Sorumlular_Metni', 'Kararda Hangi Kanunlara ve Kanun Maddelerine Atıf Yapılmıştır?': 'Kanun_Maddeleri', 'Kararın Konusu Nedir?': 'Karar_Konusu', 'Azınlık Oyu': 'Azinlik_Oyu', 'Daire ilk kararında ısrar etmiş mi?': 'Israr_Durumu'}
         df.rename(columns=sutun_map, inplace=True)
-        df['Azinlik_Oyu'] = df['Azinlik_Oyu'].str.strip()
-        df['Israr_Durumu'] = df['Israr_Durumu'].str.strip()
+        
+        df['Azinlik_Oyu_Temiz'] = df['Azinlik_Oyu'].apply(lambda x: "Var" if str(x).strip().lower() == 'var' else "Yok")
         df['_KamuZarariVar'] = df['Kamu_Zarari_Durumu'].str.contains('Var|Zarar Oluştu', case=False, na=False)
-        df['_AzinlikOyuVar'] = df['Azinlik_Oyu'].str.upper() == 'VAR'
-        df['_IsrarVar'] = df['Israr_Durumu'] != ''
         st.info("Veri temizlendi ve yardımcı analiz sütunları oluşturuldu.")
         
         analysis_results = {
             "karar_turu": df['Karar_Turu'].value_counts(),
-            "azinlik_oyu": df['Azinlik_Oyu'].value_counts(),
+            "azinlik_oyu": df['Azinlik_Oyu_Temiz'].value_counts(),
             "karar_konusu": df['Karar_Konusu'].value_counts(),
             "kamu_zarari": df['_KamuZarariVar'].value_counts().rename({True: 'Kamu Zararı Var', False: 'Kamu Zararı Yok'}),
             "unvan_analizi": None
@@ -130,36 +137,21 @@ def analyze_and_prepare_data(script_dir):
         return None
 
 def generate_excel_report(analysis_results):
-    chart_files_to_delete = []
     try:
         output_buffer = io.BytesIO()
         with pd.ExcelWriter(output_buffer, engine='openpyxl') as writer:
             st.info("İndirilebilir Excel raporu oluşturuluyor...")
-            
-            # SEKME 1: GENEL ÖZETLER
-            analysis_results['karar_turu'].to_excel(writer, sheet_name='Genel_Ozetler', header=['Sayı'], startrow=1)
+            analysis_results['karar_turu'].to_excel(writer, sheet_name='Genel_Ozetler', header=['Sayı'])
             analysis_results['kamu_zarari'].to_excel(writer, sheet_name='Genel_Ozetler', header=['Sayı'], startcol=3)
             analysis_results['azinlik_oyu'].to_excel(writer, sheet_name='Genel_Ozetler', header=['Sayı'], startcol=6)
-
-            # SEKME 2: KARAR KONUSU DETAYLARI
-            analysis_results['karar_konusu'].to_excel(writer, sheet_name='Karar_Konusu_Detaylari', header=['Sayı'], startrow=1)
-
-            # SEKME 3: UNVAN ANALİZİ (Sütunlar ayarlanarak yazılır)
+            analysis_results['karar_konusu'].to_excel(writer, sheet_name='Karar_Konusu_Detaylari', header=['Sayı'])
             if analysis_results['unvan_analizi'] is not None:
                 df_unvan_for_excel = analysis_results['unvan_analizi'].drop(columns=['Toplam', 'Kamu Zararı Yok', 'KZ Oranı %'], errors='ignore')
                 df_unvan_for_excel.to_excel(writer, sheet_name='Unvan_Kamu_Zarari_Analizi')
-        
         return output_buffer.getvalue()
-
     except Exception as e:
         st.error(f"Excel raporu oluşturulurken bir hata oluştu: {e}")
-        st.code(traceback.format_exc())
         return None
-    finally:
-        st.info("Geçici dosyalar temizleniyor...")
-        for f in chart_files_to_delete:
-            if os.path.exists(f):
-                os.remove(f)
 
 # ==============================================================================
 # BÖLÜM 3: GENEL UYGULAMA YAPISI VE AYARLAR
@@ -174,10 +166,6 @@ except Exception as e:
     gemini_model = None
 
 st.set_page_config(page_title="Hukuki Metin Analizi", layout="wide")
-
-st.title("⚖️ Gelişmiş Hukuki Analiz Platformu")
-st.markdown("Bu platform, iki ana araç sunar: **Bireysel Metin Analizi** ve **Toplu Veri Raporlama**.")
-st.markdown("---")
 
 @st.cache_resource
 def load_all_models():
@@ -229,26 +217,24 @@ def get_gemini_summary(text):
         return f"Gemini özetleme sırasında bir hata oluştu: {e}"
 
 # ==============================================================================
-# BÖLÜM 4: KULLANICI ARAYÜZÜ (STREAMLIT UI) - SİDEBAR YAPISI
+# BÖLÜM 4: KULLANICI ARAYÜZÜ (STREAMLIT UI)
 # ==============================================================================
 
-# Sidebar'da araç seçimi
+st.sidebar.title("⚖️ Analiz Platformu")
 selected_tool = st.sidebar.radio("Lütfen bir analiz aracını seçin:", 
                                    ("Bireysel Dava Metni Analizi", "Toplu Veri Analizi ve Raporlama"))
-
 st.sidebar.markdown("---")
-st.sidebar.title("ℹ️ Hakkında")
-st.sidebar.info("Bu uygulama, hukuki metinleri analiz etmek, kanunları tahmin etmek ve kapsamlı raporlar oluşturmak için tasarlanmıştır.")
+st.sidebar.info("Bu uygulama, hukuki metinleri analiz etmek ve kapsamlı raporlar oluşturmak için tasarlanmıştır.")
 
-# Ana içeriği seçilen araca göre dinamik olarak göster
+st.title(selected_tool)
+
 if selected_tool == "Bireysel Dava Metni Analizi":
     
-    st.header("1. Bireysel Dava Metni Analizi")
     st.markdown("Girilen dava metninin giriş kısmına göre ilgili **kanunları**, **kamu zararı** durumunu tahmin eder ve metnin tamamını bularak **Gemini AI** ile özetler.")
-
     if models_bundle is None or df_data is None:
         st.warning("Bireysel analiz aracı için gerekli model veya veri dosyaları yüklenemedi.")
     else:
+        # ... (Bireysel analiz UI kısmı aynı) ...
         law_model, damage_model, vectorizer_laws, vectorizer_damage, mlb_classes = (
             models_bundle['law_model'], models_bundle['damage_model'], 
             models_bundle['vectorizer_laws'], models_bundle['vectorizer_damage'], 
@@ -274,11 +260,9 @@ if selected_tool == "Bireysel Dava Metni Analizi":
                     for k in st.session_state.laws: st.success(f"- {k}")
                 else:
                     st.info("İlişkili bir kanun bulunamadı.")
-                
                 st.markdown("---")
                 st.markdown("##### 💸 Kamu Zararı Durumu:")
                 st.error(f"**{st.session_state.damage}**") if st.session_state.damage == "VAR" else st.info(f"**{st.session_state.damage}**")
-                
                 st.markdown("---")
                 st.markdown("##### 🤖 Gemini AI Metin Özeti:")
                 with st.expander("Özeti Göster", expanded=True):
@@ -288,9 +272,7 @@ if selected_tool == "Bireysel Dava Metni Analizi":
 
 elif selected_tool == "Toplu Veri Analizi ve Raporlama":
     
-    st.header("2. Toplu Veri Analizi ve Raporlama")
     st.markdown("`sorumlu.xlsx` dosyasını kullanarak kapsamlı bir analiz yapar, sonuçları aşağıda gösterir ve tam raporu indirilebilir bir Excel dosyası olarak sunar.")
-
     if st.button("📊 Kapsamlı Analiz Yap ve Göster", use_container_width=True):
         with st.spinner("Analiz yapılıyor ve görseller hazırlanıyor..."):
             script_dir = os.path.dirname(os.path.realpath(__file__))
@@ -313,36 +295,28 @@ elif selected_tool == "Toplu Veri Analizi ve Raporlama":
     if 'analysis_results' in st.session_state:
         st.markdown("---")
         st.subheader("📊 Analiz Sonuçları ve Görseller")
-        
         results = st.session_state.analysis_results
         
-        # Genel Dağılımlar
         st.markdown("#### Genel Karar Dağılımları")
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.write("**Karar Türü Dağılımı**")
-            fig, success = create_pie_chart(results['karar_turu'], "Karar Türü")
-            if success: st.pyplot(fig)
+            fig = create_plotly_pie(results['karar_turu'], "Karar Türü Dağılımı")
+            if fig: st.plotly_chart(fig, use_container_width=True)
         with col2:
-            st.write("**Kamu Zararı Dağılımı**")
-            fig, success = create_pie_chart(results['kamu_zarari'], "Kamu Zararı")
-            if success: st.pyplot(fig)
+            fig = create_plotly_pie(results['kamu_zarari'], "Kamu Zararı Dağılımı")
+            if fig: st.plotly_chart(fig, use_container_width=True)
         with col3:
-            st.write("**Azınlık Oyu Dağılımı**")
-            fig, success = create_pie_chart(results['azinlik_oyu'], "Azınlık Oyu")
-            if success: st.pyplot(fig)
+            fig = create_plotly_pie(results['azinlik_oyu'], "Azınlık Oyu Dağılımı")
+            if fig: st.plotly_chart(fig, use_container_width=True)
 
-        # Karar Konusu Analizi - YENİ BÖLÜM
         st.markdown("---")
         st.markdown("#### En Sık Görülen Karar Konuları")
-        fig, success = create_bar_plot(results['karar_konusu'], "En Sık Görülen 15 Karar Konusu", top_n=15)
-        if success:
-            st.pyplot(fig)
-        
+        fig = create_plotly_bar(results['karar_konusu'], "En Sık Görülen 15 Karar Konusu")
+        if fig:
+            st.plotly_chart(fig, use_container_width=True)
         with st.expander("Tüm Karar Konularını ve Sayılarını Gör"):
             st.dataframe(results['karar_konusu'])
 
-        # Unvan Analizi
         st.markdown("---")
         st.markdown("#### Unvanlara Göre Kamu Zararı Analizi")
         if results['unvan_analizi'] is not None:
