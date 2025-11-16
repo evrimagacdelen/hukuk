@@ -202,10 +202,9 @@ selected_tool = st.sidebar.radio("Lütfen bir analiz aracını seçin:",
 st.sidebar.markdown("---")
 st.sidebar.info("Bu uygulama, hukuki metinleri analiz etmek ve kapsamlı raporlar oluşturmak için tasarlanmıştır.")
 
-st.title(selected_tool)
-
 if selected_tool == "Bireysel Dava Metni Analizi":
     
+    st.title(selected_tool)
     st.markdown("Girilen dava metninin giriş kısmına göre ilgili **kanunları**, **kamu zararı** durumunu tahmin eder ve metnin tamamını bularak **Gemini AI** ile özetler.")
     if models_bundle is None or df_data is None:
         st.warning("Bireysel analiz aracı için gerekli model veya veri dosyaları yüklenemedi.")
@@ -251,10 +250,9 @@ elif selected_tool == "Toplu Veri Analizi ve Raporlama":
     results = analyze_and_prepare_data(script_dir)
 
     if results:
-        st.subheader("📊 Analiz Sonuçları ve Görseller")
+        st.header("📊 Analiz Sonuçları ve Görseller")
         
-        st.markdown("#### Genel Karar Dağılımları")
-        
+        st.markdown("#### Karar Türü Dağılımı")
         col1, col2 = st.columns([2, 1.2])
         with col1:
             fig_karar_turu = create_plotly_pie(results['karar_turu'], "Karar Türü Dağılımı")
@@ -262,13 +260,15 @@ elif selected_tool == "Toplu Veri Analizi ve Raporlama":
         with col2:
             st.table(results['karar_turu'])
 
+        st.markdown("#### Kamu Zararı Dağılımı")
         col1, col2 = st.columns([2, 1.2])
         with col1:
             fig_kamu_zarari = create_plotly_pie(results['kamu_zarari'], "Kamu Zararı Dağılımı")
             if fig_kamu_zarari: st.plotly_chart(fig_kamu_zarari, use_container_width=True)
         with col2:
             st.table(results['kamu_zarari'])
-
+        
+        st.markdown("#### Azınlık Oyu Dağılımı")
         col1, col2 = st.columns([2, 1.2])
         with col1:
             fig_azinlik_oyu = create_plotly_pie(results['azinlik_oyu'], "Azınlık Oyu Dağılımı")
@@ -277,28 +277,26 @@ elif selected_tool == "Toplu Veri Analizi ve Raporlama":
             st.table(results['azinlik_oyu'])
         
         st.markdown("---")
-        st.markdown("#### En Sık Görülen Karar Konuları")
+        st.markdown("#### Karar Konuları")
         col1, col2 = st.columns([2, 1.2])
         with col1:
-            fig_konu = create_plotly_bar(results['karar_konusu'], "En Sık Görülen 15 Karar Konusu")
+            fig_konu = create_plotly_bar(results['karar_konusu'], "Karar Konuları")
             if fig_konu: st.plotly_chart(fig_konu, use_container_width=True)
         with col2:
-            st.table(results['karar_konusu'].head(15)) # dataframe yerine table
-        with st.expander("Tüm Karar Konularını ve Sayılarını Gör"):
-            st.dataframe(results['karar_konusu'])
+            st.table(results['karar_konusu'].head(15))
 
         st.markdown("---")
-        st.markdown("#### En Sık Sorumlu Tutulan Unvanlar")
+        st.markdown("#### Sorumlu Unvanlar")
         col1, col2 = st.columns([2, 1.2])
         with col1:
             if results['sorumlu_sayilari'] is not None:
-                fig_sorumlu = create_plotly_bar(results['sorumlu_sayilari'], "En Sık Sorumlu Tutulan 15 Unvan")
+                fig_sorumlu = create_plotly_bar(results['sorumlu_sayilari'], "Sorumlu Unvanlar")
                 if fig_sorumlu: st.plotly_chart(fig_sorumlu, use_container_width=True)
             else:
                 st.info("Sorumlu unvan analizi için veri bulunamadı.")
         with col2:
             if results['sorumlu_sayilari'] is not None:
-                st.table(results['sorumlu_sayilari'].head(15)) # dataframe yerine table
+                st.table(results['sorumlu_sayilari'].head(15))
                 
     else:
         st.error("Analiz verileri yüklenemedi. Lütfen 'sorumlu.xlsx' dosyasının formatını ve içeriğini kontrol edin.")
