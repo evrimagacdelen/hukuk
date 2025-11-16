@@ -5,6 +5,8 @@ import os
 import pandas as pd
 import google.generativeai as genai
 import re
+import matplotlib
+matplotlib.use('Agg') # Streamlit Cloud üzerinde uyumluluk için
 import matplotlib.pyplot as plt
 from openpyxl.drawing.image import Image
 import io
@@ -70,9 +72,11 @@ def cerrahi_analiz_tek_satir(metin):
     return list(roller_bu_satirda)
 
 def create_pie_chart(data, title, filename):
-    """Pasta grafiği oluşturan yardımcı fonksiyon."""
+    """Pasta grafiği oluşturan yardımcı fonksiyon. Veri boşsa dosya oluşturmaz."""
     if data.empty:
-        return
+        st.warning(f"'{title}' için veri bulunamadığından grafik oluşturulmadı.")
+        return False
+    
     plt.figure(figsize=(8, 6))
     plt.pie(data, labels=data.index, autopct='%1.1f%%', startangle=140,
             wedgeprops={'edgecolor': 'white'}, textprops={'fontsize': 12})
@@ -80,13 +84,13 @@ def create_pie_chart(data, title, filename):
     plt.axis('equal')
     plt.savefig(filename, bbox_inches='tight', format='png')
     plt.close()
+    return True
 
 def generate_excel_report(script_dir):
     """Excel'den veri okuyup analiz ederek rapor oluşturan ana fonksiyon."""
     try:
         dosya_adi = os.path.join(script_dir, "sorumlu.xlsx")
-        sayfa_adi = 'VERİ-2-EMİR'
-        df = pd.read_excel(dosya_adi, sheet_name=sayfa_adi, header=0, dtype=str).fillna('')
+        df = pd.read_excel(dosya_adi, sheet_name='VERİ-2-EMİR', header=0, dtype=str).fillna('')
         st.info(f"'{os.path.basename(dosya_adi)}' dosyasından {len(df)} satır veri bulundu.")
 
         sutun_map = {'Kararların Niteliği': 'Karar_Turu', 'Kamu Zararı Var mı?': 'Kamu_Zarari_Durumu', 'Kamu Zararının Sorumlusu Kim?': 'Sorumlular_Metni', 'Kararda Hangi Kanunlara ve Kanun Maddelerine Atıf Yapılmıştır?': 'Kanun_Maddeleri', 'Kararın Konusu Nedir?': 'Karar_Konusu', 'Azınlık Oyu': 'Azinlik_Oyu', 'Daire ilk kararında ısrar etmiş mi?': 'Israr_Durumu'}
@@ -102,7 +106,7 @@ def generate_excel_report(script_dir):
         output_buffer = io.BytesIO()
         with pd.ExcelWriter(output_buffer, engine='openpyxl') as writer:
             
-            # --- SEKME 1: GENEL ÖZETLER VE GRAFİKLER ---
+            # SEKME 1: GENEL ÖZETLER
             st.info("Sekme 1: Genel Özetler ve Grafikler oluşturuluyor...")
             karar_turu_sayim = df['Karar_Turu'].value_counts()
             karsi_oy_sayim = df['Azinlik_Oyu'].value_counts()
@@ -117,11 +121,14 @@ def generate_excel_report(script_dir):
             ws = writer.sheets['Genel_Ozetler']
             chart_files = []
             try:
-                create_pie_chart(karar_turu_sayim, 'Karar Türü Dağılımı', 'chart1.png'); ws.add_image(Image('chart1.png'), 'A6'); chart_files.append('chart1.png')
-                create_pie_chart(karsi_oy_sayim, 'Karşı Oy Dağılımı', 'chart2.png'); ws.add_image(Image('chart2.png'), 'E6'); chart_files.append('chart2.png')
-                create_pie_chart(kamu_zarari_sayim, 'Kamu Zararı Dağılımı', 'chart3.png'); ws.add_image(Image('chart3.png'), 'I6'); chart_files.append('chart3.png')
-                if not israr_sayim.empty:
-                    create_pie_chart(israr_sayim, 'Israr Kararı Dağılımı', 'chart4.png'); ws.add_image(Image('chart4.png'), 'M6'); chart_files.append('chart4.png')
+                if create_pie_chart(karar_turu_sayim, 'Karar Türü Dağılımı', 'chart1.png'):
+                    ws.add_image(Image('chart1.png'), 'A6'); chart_files.append('chart1.png')
+                if create_pie_chart(karsi_oy_sayim, 'Karşı Oy Dağılımı', 'chart2.png'):
+                    ws.add_image(Image('chart2.png'), 'E6'); chart_files.append('chart2.png')
+                if create_pie_chart(kamu_zarari_sayim, 'Kamu Zararı Dağılımı', 'chart3.png'):
+                    ws.add_image(Image('chart3.png'), 'I6'); chart_files.append('chart3.png')
+                if create_pie_chart(israr_sayim, 'Israr Kararı Dağılımı', 'chart4.png'):
+                    ws.add_image(Image('chart4.png'), 'M6'); chart_files.append('chart4.png')
             finally:
                 for f in chart_files:
                     if os.path.exists(f): os.remove(f)
@@ -131,10 +138,10 @@ def generate_excel_report(script_dir):
             ct_kararturu_karsioy.to_excel(writer, sheet_name='Genel_Ozetler', startrow=30, startcol=0); writer.sheets['Genel_Ozetler'].cell(30, 1).value = 'Karar Türü vs Karşı Oy'
             ct_kamuzarari_karsioy.to_excel(writer, sheet_name='Genel_Ozetler', startrow=30, startcol=5); writer.sheets['Genel_Ozetler'].cell(30, 6).value = 'Kamu Zararı vs Karşı Oy'
             
-            # --- SEKME 2: UNVAN & KAMU ZARARI ANALİZİ ---
+            # SEKME 2: UNVAN & KAMU ZARARI ANALİZİ
             st.info("Sekme 2: Unvan & Kamu Zararı Analizi oluşturuluyor...")
             analiz_listesi = []
-            for index, satir in df.dropna(subset=['Sorumlular_Metni']).iterrows():
+            for _, satir in df.dropna(subset=['Sorumlular_Metni']).iterrows():
                 unvanlar = cerrahi_analiz_tek_satir(satir['Sorumlular_Metni'])
                 for unvan in unvanlar:
                     analiz_listesi.append({'Unvan': unvan, 'Zarar_Durumu': satir['_KamuZarariVar']})
@@ -146,7 +153,7 @@ def generate_excel_report(script_dir):
                 ozet_tablo_unvan['KZ Oranı %'] = ((ozet_tablo_unvan['Kamu Zararı Var'] / ozet_tablo_unvan['Toplam']) * 100).round(1)
                 ozet_tablo_unvan.sort_values(by='Toplam', ascending=False).to_excel(writer, sheet_name='Unvan_Kamu_Zarari_Analizi')
 
-            # --- SEKME 3: KARŞI OY DETAYLARI ---
+            # SEKME 3: KARŞI OY DETAYLARI
             st.info("Sekme 3: Karşı Oy Detayları oluşturuluyor...")
             df_karsi_oy = df[df['_AzinlikOyuVar']].copy()
             if not df_karsi_oy.empty:
@@ -155,35 +162,25 @@ def generate_excel_report(script_dir):
                 karsi_oy_konu.to_excel(writer, sheet_name='Karsi_Oy_Detaylari', startrow=1, startcol=0, index=False); writer.sheets['Karsi_Oy_Detaylari'].cell(1, 1).value = 'Karşı Oy Konuları'
                 karsi_oy_kanun.to_excel(writer, sheet_name='Karsi_Oy_Detaylari', startrow=1, startcol=3, index=False); writer.sheets['Karsi_Oy_Detaylari'].cell(1, 4).value = 'Karşı Oy Kanun Maddeleri'
 
-            # --- SEKME 4: KAMU ZARARI DETAYLARI ---
+            # SEKME 4: KAMU ZARARI DETAYLARI
             st.info("Sekme 4: Kamu Zararı Detayları oluşturuluyor...")
             df_kz = df[df['_KamuZarariVar']].copy()
             if not df_kz.empty:
                 kz_id_konu = df_kz[df_kz['Karar_Turu'] == 'İlk Derece Kararı']['Karar_Konusu'].value_counts().reset_index().rename(columns={'index':'Konu', 'Karar_Konusu':'Sayı'})
-                kz_id_kanun = df_kz[df_kz['Karar_Turu'] == 'İlk Derece Kararı']['Kanun_Maddeleri'].value_counts().reset_index().rename(columns={'index':'Kanun', 'Kanun_Maddeleri':'Sayı'})
                 kz_iade_konu = df_kz[df_kz['Karar_Turu'] == 'Yargılamanın İadesi sonucu verilen karar']['Karar_Konusu'].value_counts().reset_index().rename(columns={'index':'Konu', 'Karar_Konusu':'Sayı'})
-                kz_iade_kanun = df_kz[df_kz['Karar_Turu'] == 'Yargılamanın İadesi sonucu verilen karar']['Kanun_Maddeleri'].value_counts().reset_index().rename(columns={'index':'Kanun', 'Kanun_Maddeleri':'Sayı'})
                 kz_id_konu.to_excel(writer, sheet_name='Kamu_Zarari_Detaylari', startrow=1, startcol=0, index=False); writer.sheets['Kamu_Zarari_Detaylari'].cell(1, 1).value = 'KZ Olan İlk Derece - Konular'
-                kz_id_kanun.to_excel(writer, sheet_name='Kamu_Zarari_Detaylari', startrow=1, startcol=3, index=False); writer.sheets['Kamu_Zarari_Detaylari'].cell(1, 4).value = 'KZ Olan İlk Derece - Kanunlar'
-                kz_iade_konu.to_excel(writer, sheet_name='Kamu_Zarari_Detaylari', startrow=1, startcol=6, index=False); writer.sheets['Kamu_Zarari_Detaylari'].cell(1, 7).value = 'KZ Olan Y. İadesi - Konular'
-                kz_iade_kanun.to_excel(writer, sheet_name='Kamu_Zarari_Detaylari', startrow=1, startcol=9, index=False); writer.sheets['Kamu_Zarari_Detaylari'].cell(1, 10).value = 'KZ Olan Y. İadesi - Kanunlar'
+                kz_iade_konu.to_excel(writer, sheet_name='Kamu_Zarari_Detaylari', startrow=1, startcol=3, index=False); writer.sheets['Kamu_Zarari_Detaylari'].cell(1, 4).value = 'KZ Olan Y. İadesi - Konular'
             
-            # --- SEKME 5: Y. İADESİ & ISRAR KARARLARI DETAYLARI ---
+            # SEKME 5: Y. İADESİ & ISRAR KARARLARI DETAYLARI
             st.info("Sekme 5: Y. İadesi & Israr Kararları Detayları oluşturuluyor...")
             df_iade = df[df['Karar_Turu'] == 'Yargılamanın İadesi sonucu verilen karar'].copy()
             df_israr = df[df['_IsrarVar']].copy()
             if not df_iade.empty:
                 iade_konu = df_iade['Karar_Konusu'].value_counts().reset_index().rename(columns={'index':'Konu', 'Karar_Konusu':'Sayı'})
-                iade_kanun = df_iade['Kanun_Maddeleri'].value_counts().reset_index().rename(columns={'index':'Kanun', 'Kanun_Maddeleri':'Sayı'})
-                iade_konu.to_excel(writer, sheet_name='Iade_ve_Israr_Detaylari', startrow=1, startcol=0, index=False); writer.sheets['Iade_ve_Israr_Detaylari'].cell(1, 1).value = 'Y. İadesi Karar Konuları (Soru 5)'
-                iade_kanun.to_excel(writer, sheet_name='Iade_ve_Israr_Detaylari', startrow=1, startcol=3, index=False); writer.sheets['Iade_ve_Israr_Detaylari'].cell(1, 4).value = 'Y. İadesi Kanun Maddeleri (Soru 6)'
+                iade_konu.to_excel(writer, sheet_name='Iade_ve_Israr_Detaylari', startrow=1, startcol=0, index=False); writer.sheets['Iade_ve_Israr_Detaylari'].cell(1, 1).value = 'Y. İadesi Karar Konuları'
             if not df_israr.empty:
-                israr_sayisi_df = pd.DataFrame({'Analiz': ['Toplam Israr Edilen Karar Sayısı (Soru 7)'], 'Sonuç': [len(df_israr)]})
                 israr_konu = df_israr['Karar_Konusu'].value_counts().reset_index().rename(columns={'index':'Konu', 'Karar_Konusu':'Sayı'})
-                israr_kanun = df_israr['Kanun_Maddeleri'].value_counts().reset_index().rename(columns={'index':'Kanun', 'Kanun_Maddeleri':'Sayı'})
-                israr_sayisi_df.to_excel(writer, sheet_name='Iade_ve_Israr_Detaylari', startrow=0, startcol=6, index=False, header=False)
-                israr_konu.to_excel(writer, sheet_name='Iade_ve_Israr_Detaylari', startrow=3, startcol=6, index=False); writer.sheets['Iade_ve_Israr_Detaylari'].cell(3, 7).value = 'Israr Edilen Kararlar - Konular'
-                israr_kanun.to_excel(writer, sheet_name='Iade_ve_Israr_Detaylari', startrow=3, startcol=9, index=False); writer.sheets['Iade_ve_Israr_Detaylari'].cell(3, 10).value = 'Israr Edilen Kararlar - Kanunlar'
+                israr_konu.to_excel(writer, sheet_name='Iade_ve_Israr_Detaylari', startrow=1, startcol=3, index=False); writer.sheets['Iade_ve_Israr_Detaylari'].cell(1, 4).value = 'Israr Edilen Kararlar - Konular'
 
         return output_buffer.getvalue()
 
@@ -191,7 +188,7 @@ def generate_excel_report(script_dir):
         st.error(f"HATA: 'sorumlu.xlsx' dosyası bulunamadı. Lütfen GitHub deponuza 'app.py' ile aynı dizine yüklediğinizden emin olun.")
         return None
     except KeyError as e:
-        st.error(f"HATA: Excel dosyasında beklenen bir sütun başlığı bulunamadı: {e}")
+        st.error(f"HATA: 'sorumlu.xlsx' dosyasında beklenen bir sütun başlığı bulunamadı: {e}")
         return None
     except Exception as e:
         st.error(f"Rapor oluşturulurken beklenmedik bir hata oluştu: {e}")
@@ -201,42 +198,33 @@ def generate_excel_report(script_dir):
 # BÖLÜM 3: GENEL UYGULAMA YAPISI VE AYARLAR
 # ==============================================================================
 
-# GÜVENLİ GEMINI API AYARLARI
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
     gemini_model = genai.GenerativeModel('gemini-1.5-pro-latest')
 except Exception as e:
     st.error(f"Gemini API anahtarı yüklenirken bir hata oluştu: {e}")
-    st.info("Lütfen Streamlit Cloud'da uygulamanızın Ayarlar > Sırlar bölümüne GEMINI_API_KEY'i doğru şekilde eklediğinizden emin olun.")
     gemini_model = None
 
-# Sayfa yapılandırması
 st.set_page_config(page_title="Hukuki Metin Analizi", layout="wide")
 
-# Başlık ve açıklama
 st.title("⚖️ Gelişmiş Hukuki Analiz Platformu")
 st.markdown("Bu platform, iki ana araç sunar: **Bireysel Metin Analizi** ve **Toplu Veri Raporlama**.")
 st.markdown("---")
 
-# === Model ve Veri Yükleyici Fonksiyonlar ===
 @st.cache_resource
 def load_all_models():
-    """Tüm modelleri ve vektörleştiricileri güvenli bir şekilde yükler."""
-    script_dir = os.path.dirname(os.path.realpath(__file__))
-    file_path = os.path.join(script_dir, "final_models_combined.pkl")
+    file_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "final_models_combined.pkl")
     try:
         with open(file_path, "rb") as f:
             return pickle.load(f)
     except FileNotFoundError:
-        st.error(f"🚨 Tahmin modeli dosyası bulunamadı: {file_path}. Lütfen GitHub deponuza yükleyin.")
+        st.error(f"🚨 Tahmin modeli dosyası bulunamadı: '{file_path}'. Lütfen GitHub deponuza yükleyin.")
         return None
 
 @st.cache_data
 def load_excel_data():
-    """'SOMUT OLAY-PYHTON.xlsx' dosyasını yükler."""
-    script_dir = os.path.dirname(os.path.realpath(__file__))
-    file_path = os.path.join(script_dir, "SOMUT OLAY-PYHTON.xlsx")
+    file_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "SOMUT OLAY-PYHTON.xlsx")
     try:
         df = pd.read_excel(file_path)
         if 'GİRİŞ' not in df.columns or 'Tam Metin' not in df.columns:
@@ -244,14 +232,12 @@ def load_excel_data():
             return None
         return df
     except FileNotFoundError:
-        st.error(f"🚨 Özetleme için veri dosyası bulunamadı: {file_path}. Lütfen GitHub deponuza yükleyin.")
+        st.error(f"🚨 Özetleme için veri dosyası bulunamadı: '{file_path}'. Lütfen GitHub deponuza yükleyin.")
         return None
 
-# === Modelleri ve Veriyi Otomatik Yükle ===
 models_bundle = load_all_models()
 df_data = load_excel_data()
 
-# === Yardımcı Fonksiyonlar ===
 def predict_case(text, law_vec, damage_vec, law_mdl, damage_mdl, classes):
     X_laws = law_vec.transform([text])
     law_prediction_vector = law_mdl.predict(X_laws)[0]
@@ -262,12 +248,9 @@ def predict_case(text, law_vec, damage_vec, law_mdl, damage_mdl, classes):
     return predicted_laws, has_public_damage
 
 def find_full_text(df, input_text):
-    if df is None or input_text is None or not input_text.strip():
-        return None
+    if df is None or not input_text or not input_text.strip(): return None
     mask = df['GİRİŞ'].str.strip().str.startswith(input_text.strip(), na=False)
-    if mask.any():
-        return df.loc[mask, 'Tam Metin'].iloc[0]
-    return None
+    return df.loc[mask, 'Tam Metin'].iloc[0] if mask.any() else None
 
 def get_gemini_summary(text):
     if gemini_model is None: return "Gemini modeli yüklenemediği için özet oluşturulamadı."
@@ -282,68 +265,57 @@ def get_gemini_summary(text):
 # BÖLÜM 4: KULLANICI ARAYÜZÜ (STREAMLIT UI)
 # ==============================================================================
 
-# === ARAÇ 1: BİREYSEL METİN ANALİZİ ===
 st.header("1. Bireysel Dava Metni Analizi")
-st.markdown("Girilen dava metninin giriş kısmına göre ilgili **kanunları**, **kamu zararı** durumunu tahmin eder ve metnin tamamını bularak **Gemini AI** ile özetler.")
 
 if models_bundle is None or df_data is None:
-    st.warning("Bireysel analiz aracı için gerekli model veya veri dosyaları yüklenemedi. Lütfen yukarıdaki hata mesajlarını kontrol edin.")
+    st.warning("Bireysel analiz aracı için gerekli model veya veri dosyaları yüklenemedi.")
 else:
-    law_model = models_bundle['law_model']
-    damage_model = models_bundle['damage_model']
-    vectorizer_laws = models_bundle['vectorizer_laws']
-    vectorizer_damage = models_bundle['vectorizer_damage']
-    mlb_classes = models_bundle['mlb_classes']
-
+    law_model, damage_model, vectorizer_laws, vectorizer_damage, mlb_classes = (
+        models_bundle['law_model'], models_bundle['damage_model'], 
+        models_bundle['vectorizer_laws'], models_bundle['vectorizer_damage'], 
+        models_bundle['mlb_classes']
+    )
     col1, col2 = st.columns([2, 1])
     with col1:
-        st.subheader("📝 Dava Metni (Giriş Kısmı)")
         input_text = st.text_area("Analiz edilecek metnin başlangıcını girin:", height=250, placeholder="Örnek: Eşi çalışan personele aile yardımı ödeneği ödenmesi...")
         if st.button("🔍 Analiz Et", type="primary", use_container_width=True):
-            if not input_text.strip():
-                st.warning("Lütfen analiz için bir metin girin.")
-            else:
+            if input_text.strip():
                 with st.spinner("Analiz yapılıyor..."):
-                    laws, damage = predict_case(input_text, vectorizer_laws, vectorizer_damage, law_model, damage_model, mlb_classes)
-                    st.session_state.predicted_laws = laws
-                    st.session_state.predicted_damage = damage
+                    st.session_state.laws, st.session_state.damage = predict_case(input_text, vectorizer_laws, vectorizer_damage, law_model, damage_model, mlb_classes)
                     full_text = find_full_text(df_data, input_text)
-                    if full_text:
-                        st.session_state.gemini_summary = get_gemini_summary(full_text)
-                    else:
-                        st.session_state.gemini_summary = "Girdiğiniz metinle eşleşen bir 'Tam Metin' Excel'de bulunamadı. Özetleme yapılamadı."
+                    st.session_state.summary = get_gemini_summary(full_text) if full_text else "Girdiğiniz metinle eşleşen bir 'Tam Metin' bulunamadı."
                     st.session_state.ran_prediction = True
+            else:
+                st.warning("Lütfen analiz için bir metin girin.")
     with col2:
         st.subheader("📊 Analiz Sonuçları")
-        if 'ran_prediction' in st.session_state:
-            st.markdown("##### 📘 Tahmin Edilen İlgili Kanunlar:")
-            if st.session_state.predicted_laws:
-                for k in st.session_state.predicted_laws:
-                    st.success(f"- {k}")
+        if st.session_state.get('ran_prediction', False):
+            st.markdown("##### 📘 İlgili Kanunlar:")
+            if st.session_state.laws:
+                for k in st.session_state.laws: st.success(f"- {k}")
             else:
-                st.info("⚠️ İlişkili bir kanun bulunamadı.")
+                st.info("İlişkili bir kanun bulunamadı.")
+            
             st.markdown("---")
             st.markdown("##### 💸 Kamu Zararı Durumu:")
-            damage_result = st.session_state.predicted_damage
-            st.error(f"**{damage_result}**") if damage_result == "VAR" else st.info(f"**{damage_result}**")
+            st.error(f"**{st.session_state.damage}**") if st.session_state.damage == "VAR" else st.info(f"**{st.session_state.damage}**")
+            
             st.markdown("---")
             st.markdown("##### 🤖 Gemini AI Metin Özeti:")
-            with st.expander("Özeti Görmek İçin Tıklayın", expanded=True):
-                st.info(st.session_state.get('gemini_summary', 'Özet bulunamadı.'))
+            with st.expander("Özeti Göster", expanded=True):
+                st.info(st.session_state.summary)
         else:
             st.info("Sonuçları görmek için bir metin girip 'Analiz Et' butonuna tıklayın.")
 
 st.markdown("\n\n---\n\n")
 
-# === ARAÇ 2: TOPLU VERİ ANALİZİ VE RAPORLAMA ===
 st.header("2. Toplu Veri Analizi ve Raporlama")
-st.markdown("`sorumlu.xlsx` dosyasındaki verileri kullanarak kapsamlı bir analiz yapar ve sonuçları grafiklerle zenginleştirilmiş yeni bir Excel dosyası olarak sunar.")
+st.markdown("`sorumlu.xlsx` dosyasını kullanarak kapsamlı bir analiz yapar ve sonuçları grafiklerle zenginleştirilmiş yeni bir Excel dosyası olarak sunar.")
 
 if st.button("📊 Kapsamlı Analiz Raporu Oluştur", use_container_width=True):
-    with st.spinner("Rapor oluşturuluyor... Bu işlem verinin büyüklüğüne göre biraz zaman alabilir."):
+    with st.spinner("Rapor oluşturuluyor..."):
         script_dir = os.path.dirname(os.path.realpath(__file__))
         report_data = generate_excel_report(script_dir)
-        
         if report_data:
             st.session_state.report_data = report_data
             st.success("✅ Rapor başarıyla oluşturuldu! Aşağıdaki butondan indirebilirsiniz.")
