@@ -2,7 +2,7 @@ streamlit
 pandas
 numpy
 scikit-learn
-
+matplotlib
 openpyxl
 streamlit
 numpy
@@ -10,3 +10,4 @@ pandas
 openpyxl
 google-generativeai
 scikit-learn
+
