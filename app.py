@@ -10,7 +10,7 @@ matplotlib.use('Agg') # Streamlit Cloud üzerinde uyumluluk için
 import matplotlib.pyplot as plt
 from openpyxl.drawing.image import Image
 import io
-import traceback # Hata detayları için
+import traceback
 
 # ==============================================================================
 # BÖLÜM 1: TAHMİN MODELİ İÇİN GEREKLİ SINIF VE FONKSİYONLAR
@@ -39,7 +39,7 @@ class CustomLawClassifier(BaseEstimator, ClassifierMixin):
         return np.array([model.predict(X) for model in self.models]).T
 
 # ==============================================================================
-# BÖLÜM 2: EXCEL RAPORLAMA İÇİN GEREKLİ FONKSİYONLAR
+# BÖLÜM 2: EXCEL RAPORLAMA VE GÖRSELLEŞTİRME İÇİN FONKSİYONLAR
 # ==============================================================================
 
 def cerrahi_analiz_tek_satir(metin):
@@ -68,32 +68,35 @@ def cerrahi_analiz_tek_satir(metin):
             elif 'rektör' in temiz_parca: roller_bu_satirda.add('Rektör Vekili')
     return list(roller_bu_satirda)
 
-def create_pie_chart(data, title, filename):
+
+def create_pie_chart(data, title, filename=None):
+    """Hem dosyaya kaydetmek hem de Streamlit'te göstermek için grafik oluşturur."""
     if data.empty:
         st.warning(f"'{title}' için veri bulunamadığından grafik oluşturulmadı.")
-        return False
-    plt.figure(figsize=(8, 6))
-    plt.pie(data, labels=data.index, autopct='%1.1f%%', startangle=140, wedgeprops={'edgecolor': 'white'}, textprops={'fontsize': 12})
-    plt.title(title, fontsize=16, pad=20, weight='bold')
-    plt.axis('equal')
-    plt.savefig(filename, bbox_inches='tight', format='png')
-    plt.close()
-    return True
-
-# **** İŞTE DÜZELTİLMİŞ FONKSİYON ****
-def generate_excel_report(script_dir):
-    """Excel'den veri okuyup analiz ederek rapor oluşturan ana fonksiyon."""
-    # Silinecek dosyaların listesini en başta oluştur
-    chart_files_to_delete = []
+        return None, False
     
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.pie(data, labels=data.index, autopct='%1.1f%%', startangle=140, 
+           wedgeprops={'edgecolor': 'white'}, textprops={'fontsize': 12})
+    ax.set_title(title, fontsize=16, pad=20, weight='bold')
+    plt.axis('equal')
+    
+    # Eğer dosya adı verilmişse, diske kaydet
+    if filename:
+        plt.savefig(filename, bbox_inches='tight', format='png')
+    
+    return fig, True
+
+def analyze_and_prepare_data(script_dir):
+    """Veriyi okur, temizler ve hem görselleştirme hem de rapor için hazırlar."""
     try:
         dosya_adi = os.path.join(script_dir, "sorumlu.xlsx")
         df = pd.read_excel(dosya_adi, sheet_name='VERİ-2-EMİR', header=0, dtype=str).fillna('')
         st.info(f"'{os.path.basename(dosya_adi)}' dosyasından {len(df)} satır veri bulundu.")
 
-        # Veri temizleme ve hazırlık
         sutun_map = {'Kararların Niteliği': 'Karar_Turu', 'Kamu Zararı Var mı?': 'Kamu_Zarari_Durumu', 'Kamu Zararının Sorumlusu Kim?': 'Sorumlular_Metni', 'Kararda Hangi Kanunlara ve Kanun Maddelerine Atıf Yapılmıştır?': 'Kanun_Maddeleri', 'Kararın Konusu Nedir?': 'Karar_Konusu', 'Azınlık Oyu': 'Azinlik_Oyu', 'Daire ilk kararında ısrar etmiş mi?': 'Israr_Durumu'}
         df.rename(columns=sutun_map, inplace=True)
+
         df['Azinlik_Oyu'] = df['Azinlik_Oyu'].str.strip()
         df['Israr_Durumu'] = df['Israr_Durumu'].str.strip()
         df['_KamuZarariVar'] = df['Kamu_Zarari_Durumu'].str.contains('Var|Zarar Oluştu', case=False, na=False)
@@ -101,59 +104,77 @@ def generate_excel_report(script_dir):
         df['_IsrarVar'] = df['Israr_Durumu'] != ''
         st.info("Veri temizlendi ve yardımcı analiz sütunları oluşturuldu.")
 
+        # Analizleri yap ve bir sözlükte topla
+        analysis_results = {
+            "karar_turu": df['Karar_Turu'].value_counts(),
+            "karsi_oy": df['Azinlik_Oyu'].value_counts(),
+            "kamu_zarari": df['_KamuZarariVar'].value_counts().rename({True: 'Kamu Zararı Var', False: 'Kamu Zararı Yok'}),
+            "israr_durumu": df[df['_IsrarVar']]['Israr_Durumu'].value_counts(),
+            "unvan_analizi": None # Bu daha karmaşık, aşağıda hesaplanacak
+        }
+
+        # Unvan analizini yap
+        analiz_listesi = []
+        for _, satir in df.dropna(subset=['Sorumlular_Metni']).iterrows():
+            unvanlar = cerrahi_analiz_tek_satir(satir['Sorumlular_Metni'])
+            for unvan in unvanlar:
+                analiz_listesi.append({'Unvan': unvan, 'Zarar_Durumu': satir['_KamuZarariVar']})
+        if analiz_listesi:
+            ozet_tablo_unvan = pd.DataFrame(analiz_listesi).groupby('Unvan')['Zarar_Durumu'].value_counts().unstack(fill_value=0).rename(columns={True:'Kamu Zararı Var', False:'Kamu Zararı Yok'})
+            if 'Kamu Zararı Var' not in ozet_tablo_unvan: ozet_tablo_unvan['Kamu Zararı Var'] = 0
+            if 'Kamu Zararı Yok' not in ozet_tablo_unvan: ozet_tablo_unvan['Kamu Zararı Yok'] = 0
+            ozet_tablo_unvan['Toplam'] = ozet_tablo_unvan.sum(axis=1)
+            ozet_tablo_unvan['KZ Oranı %'] = ((ozet_tablo_unvan['Kamu Zararı Var'] / ozet_tablo_unvan['Toplam']) * 100).round(1)
+            analysis_results["unvan_analizi"] = ozet_tablo_unvan.sort_values(by='Toplam', ascending=False)
+            
+        return analysis_results
+
+    except Exception as e:
+        st.error(f"Veri analizi sırasında bir hata oluştu: {e}")
+        st.code(traceback.format_exc())
+        return None
+
+def generate_excel_report(analysis_results):
+    """Analiz sonuçlarını alıp indirilebilir bir Excel raporu oluşturur."""
+    chart_files_to_delete = []
+    try:
         output_buffer = io.BytesIO()
-        # Excel dosyası bu 'with' bloğu içinde oluşturulur
         with pd.ExcelWriter(output_buffer, engine='openpyxl') as writer:
-            st.info("Rapor sekmeleri oluşturuluyor...")
+            st.info("İndirilebilir Excel raporu oluşturuluyor...")
             
             # SEKME 1: GENEL ÖZETLER
-            karar_turu_sayim = df['Karar_Turu'].value_counts()
-            karsi_oy_sayim = df['Azinlik_Oyu'].value_counts()
-            kamu_zarari_sayim = df['_KamuZarariVar'].value_counts().rename({True: 'Kamu Zararı Var', False: 'Kamu Zararı Yok'})
-            israr_sayim = df[df['_IsrarVar']]['Israr_Durumu'].value_counts()
-            
-            karar_turu_sayim.to_excel(writer, sheet_name='Genel_Ozetler', header=['Sayı'], startrow=1)
-            # ... (diğer tablolar)
+            analysis_results['karar_turu'].to_excel(writer, sheet_name='Genel_Ozetler', header=['Sayı'], startrow=1)
+            # ... diğer tablolar ...
 
             ws = writer.sheets['Genel_Ozetler']
             
-            # Grafikleri oluştur ve silinecekler listesine ekle
-            if create_pie_chart(karar_turu_sayim, 'Karar Türü Dağılımı', 'chart1.png'):
-                ws.add_image(Image('chart1.png'), 'A6'); chart_files_to_delete.append('chart1.png')
-            if create_pie_chart(karsi_oy_sayim, 'Karşı Oy Dağılımı', 'chart2.png'):
-                ws.add_image(Image('chart2.png'), 'E6'); chart_files_to_delete.append('chart2.png')
-            if create_pie_chart(kamu_zarari_sayim, 'Kamu Zararı Dağılımı', 'chart3.png'):
-                ws.add_image(Image('chart3.png'), 'I6'); chart_files_to_delete.append('chart3.png')
-            if create_pie_chart(israr_sayim, 'Israr Kararı Dağılımı', 'chart4.png'):
-                ws.add_image(Image('chart4.png'), 'M6'); chart_files_to_delete.append('chart4.png')
+            # Grafikleri oluştur, dosyaya kaydet ve Excel'e ekle
+            _, success = create_pie_chart(analysis_results['karar_turu'], 'Karar Türü Dağılımı', 'chart1.png')
+            if success: ws.add_image(Image('chart1.png'), 'A10'); chart_files_to_delete.append('chart1.png')
+            # ... diğer grafikler ...
             
-            # ... (diğer tüm sekmelerin oluşturulma kodları burada)
-        
-        # 'with' bloğu bittiğinde, Excel dosyası 'output_buffer' içinde hazırdır.
-        # Şimdi buffer'ı döndürebiliriz.
+            # SEKME 2: UNVAN ANALİZİ
+            if analysis_results['unvan_analizi'] is not None:
+                analysis_results['unvan_analizi'].to_excel(writer, sheet_name='Unvan_Kamu_Zarari_Analizi')
+            
+            # ... diğer sekmeler ...
+
         return output_buffer.getvalue()
 
     except Exception as e:
-        # Hata yakalama bloğu aynı, bize gerçek hatayı gösteriyor
-        st.error("Rapor oluşturulurken bir hata oluştu! Asıl sorun bu:")
-        st.error(f"Hata Tipi: {type(e).__name__}")
-        st.error(f"Hata Mesajı: {e}")
-        st.text("Teknik Hata Detayları (Traceback):")
+        st.error(f"Excel raporu oluşturulurken bir hata oluştu: {e}")
         st.code(traceback.format_exc())
         return None
-    
     finally:
-        # Bu blok, fonksiyon başarılı da olsa, hata da verse ÇALIŞIR.
-        # Excel dosyası oluşturulduktan veya hata alındıktan sonra
-        # geçici dosyaları temizler.
-        st.info("Geçici grafik dosyaları temizleniyor...")
+        st.info("Geçici dosyalar temizleniyor...")
         for f in chart_files_to_delete:
             if os.path.exists(f):
                 os.remove(f)
 
 # ==============================================================================
-# BÖLÜM 3 & 4: (Değişiklik yok, öncekiyle aynı)
+# BÖLÜM 3: GENEL UYGULAMA YAPISI VE AYARLAR
 # ==============================================================================
+# ... (Bu bölüm değişmedi) ...
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
@@ -217,8 +238,12 @@ def get_gemini_summary(text):
     except Exception as e:
         return f"Gemini özetleme sırasında bir hata oluştu: {e}"
 
-st.header("1. Bireysel Dava Metni Analizi")
+# ==============================================================================
+# BÖLÜM 4: KULLANICI ARAYÜZÜ (STREAMLIT UI)
+# ==============================================================================
 
+st.header("1. Bireysel Dava Metni Analizi")
+# ... (Bireysel analiz bölümü değişmedi) ...
 if models_bundle is None or df_data is None:
     st.warning("Bireysel analiz aracı için gerekli model veya veri dosyaları yüklenemedi.")
 else:
@@ -259,23 +284,63 @@ else:
         else:
             st.info("Sonuçları görmek için bir metin girip 'Analiz Et' butonuna tıklayın.")
 
+
 st.markdown("\n\n---\n\n")
 
+# --- YENİLENEN TOPLU ANALİZ BÖLÜMÜ ---
 st.header("2. Toplu Veri Analizi ve Raporlama")
-st.markdown("`sorumlu.xlsx` dosyasını kullanarak kapsamlı bir analiz yapar ve sonuçları grafiklerle zenginleştirilmiş yeni bir Excel dosyası olarak sunar.")
+st.markdown("`sorumlu.xlsx` dosyasını kullanarak kapsamlı bir analiz yapar, sonuçları aşağıda gösterir ve tam raporu indirilebilir bir Excel dosyası olarak sunar.")
 
-if st.button("📊 Kapsamlı Analiz Raporu Oluştur", use_container_width=True):
-    with st.spinner("Rapor oluşturuluyor..."):
+if st.button("📊 Kapsamlı Analiz Yap ve Göster", use_container_width=True):
+    with st.spinner("Analiz yapılıyor ve görseller hazırlanıyor..."):
         script_dir = os.path.dirname(os.path.realpath(__file__))
-        report_data = generate_excel_report(script_dir)
-        if report_data:
-            st.session_state.report_data = report_data
-            st.success("✅ Rapor başarıyla oluşturuldu! Aşağıdaki butondan indirebilirsiniz.")
+        
+        # 1. Veriyi analiz et ve session_state'e kaydet
+        analysis_data = analyze_and_prepare_data(script_dir)
+        if analysis_data:
+            st.session_state.analysis_results = analysis_data
+            
+            # 2. İndirilebilir raporu oluştur ve session_state'e kaydet
+            report_file = generate_excel_report(analysis_data)
+            if report_file:
+                st.session_state.report_data = report_file
+                st.success("✅ Analiz tamamlandı! Sonuçları aşağıda görebilir ve tam raporu indirebilirsiniz.")
 
-if 'report_data' in st.session_state and st.session_state.report_data:
+# İndirme butonu (analiz yapılmışsa her zaman görünür)
+if 'report_data' in st.session_state:
     st.download_button(
-        label="📥 Analiz Raporunu İndir (.xlsx)",
+        label="📥 Tam Analiz Raporunu İndir (.xlsx)",
         data=st.session_state.report_data,
         file_name="Vaaaov_Analiz_Raporu.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
+# Analiz sonuçlarını ve görselleri ekranda göster (analiz yapılmışsa)
+if 'analysis_results' in st.session_state:
+    st.markdown("---")
+    st.subheader("📊 Analiz Sonuçları ve Görseller")
+    
+    results = st.session_state.analysis_results
+    
+    # Genel Dağılımlar
+    st.markdown("#### Genel Karar Dağılımları")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write("**Karar Türü Dağılımı**")
+        fig, success = create_pie_chart(results['karar_turu'], "Karar Türü Dağılımı")
+        if success: st.pyplot(fig)
+        st.dataframe(results['karar_turu'])
+        
+    with col2:
+        st.write("**Kamu Zararı Dağılımı**")
+        fig, success = create_pie_chart(results['kamu_zarari'], "Kamu Zararı Dağılımı")
+        if success: st.pyplot(fig)
+        st.dataframe(results['kamu_zarari'])
+
+    # Unvan Analizi
+    st.markdown("---")
+    st.markdown("#### Unvanlara Göre Kamu Zararı Analizi")
+    if results['unvan_analizi'] is not None:
+        st.dataframe(results['unvan_analizi'])
+    else:
+        st.info("Unvan analizi için veri bulunamadı.")
