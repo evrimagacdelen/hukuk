@@ -36,7 +36,7 @@ class CustomLawClassifier(BaseEstimator, ClassifierMixin):
         return np.array([model.predict(X) for model in self.models]).T
 
 # ==============================================================================
-# BÖLÜM 2: EXCEL RAPORLAMA VE GÖRSELLEŞTİRME İÇİN FONKSİYONLAR
+# BÖLÜM 2: GÖRSELLEŞTİRME VE ANALİZ İÇİN FONKSİYONLAR
 # ==============================================================================
 def cerrahi_analiz_tek_satir(metin):
     # ... (Bu fonksiyonda değişiklik yok) ...
@@ -55,8 +55,8 @@ def cerrahi_analiz_tek_satir(metin):
             rol = unvan
             if any(k in unvan for k in ['Kurulu', 'Komisyonu', 'Senatosu', 'Jüri']): rol += ' Üyesi'
             roller_bu_satirda.add(rol); kalan_metin = re.sub(re.escape(unvan), '', kalan_metin, flags=re.IGNORECASE)
-    potansiyel_roller = re.split(r'[,/()]|\s+ve\s+|\s+ile\s+', kalan_metin)
-    for parca in potansiyel_roller:
+    potensiyel_roller = re.split(r'[,/()]|\s+ve\s+|\s+ile\s+', kalan_metin)
+    for parca in potensiyel_roller:
         temiz_parca = parca.strip().lower()
         if temiz_parca in NORM_MAP: roller_bu_satirda.add(NORM_MAP[temiz_parca])
         elif 'vekili' in temiz_parca or temiz_parca.endswith((' v', ' v.')):
@@ -72,31 +72,28 @@ def create_plotly_pie(df, title):
     fig.update_traces(hovertemplate="<b>%{label}</b><br>Sayı: %{value}<br>Yüzde: %{percent}")
     return fig
 
-# --- GÜNCELLENEN BAR PLOT FONKSİYONU ---
 def create_plotly_bar(df, title, top_n=15):
     if df is None or df.empty:
         return None
     data_to_plot = df.head(top_n)
     fig = px.bar(data_to_plot, x=df.columns[1], y=df.columns[0], orientation='h', title=title, 
-                 labels={df.columns[1]: '', df.columns[0]: ''}, # Eksen başlıklarını kaldır
+                 labels={df.columns[1]: '', df.columns[0]: ''}, 
                  color=df.columns[1], color_continuous_scale=px.colors.sequential.Teal, text=df.columns[1])
     fig.update_layout(height=500, title_x=0.5, yaxis={'categoryorder':'total ascending'}, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='white' if st.get_option("theme.base") == "dark" else "black"))
     return fig
 
-# --- GÜNCELLENEN ANALİZ FONKSİYONU ---
+# --- MESAJLARI KALDIRILMIŞ ANALİZ FONKSİYONU ---
+@st.cache_data
 def analyze_and_prepare_data(script_dir):
     try:
         dosya_adi = os.path.join(script_dir, "sorumlu.xlsx")
         df = pd.read_excel(dosya_adi, sheet_name='VERİ-2-EMİR', header=0, dtype=str).fillna('')
-        st.info(f"'{os.path.basename(dosya_adi)}' dosyasından {len(df)} satır veri bulundu.")
         sutun_map = {'Kararların Niteliği': 'Karar_Turu', 'Kamu Zararı Var mı?': 'Kamu_Zarari_Durumu', 'Kamu Zararının Sorumlusu Kim?': 'Sorumlular_Metni', 'Kararda Hangi Kanunlara ve Kanun Maddelerine Atıf Yapılmıştır?': 'Kanun_Maddeleri', 'Kararın Konusu Nedir?': 'Karar_Konusu', 'Azınlık Oyu': 'Azinlik_Oyu', 'Daire ilk kararında ısrar etmiş mi?': 'Israr_Durumu'}
         df.rename(columns=sutun_map, inplace=True)
         
         df['Azinlik_Oyu_Temiz'] = df['Azinlik_Oyu'].apply(lambda x: "Var" if str(x).strip().lower() == 'var' else "Yok")
         df['_KamuZarariVar'] = df['Kamu_Zarari_Durumu'].str.contains('Var|Zarar Oluştu', case=False, na=False)
-        st.info("Veri temizlendi ve yardımcı analiz sütunları oluşturuldu.")
         
-        # Analizleri yap ve tablo gösterimi için DataFrame'e çevir
         df_karar_turu = df['Karar_Turu'].value_counts().reset_index()
         df_karar_turu.columns = ['Karar Türü', 'Frekans']
         
@@ -139,24 +136,6 @@ def analyze_and_prepare_data(script_dir):
     except Exception as e:
         st.error(f"Veri analizi sırasında bir hata oluştu: {e}")
         st.code(traceback.format_exc())
-        return None
-
-def generate_excel_report(analysis_results):
-    # ... (Bu fonksiyonda değişiklik yok) ...
-    try:
-        output_buffer = io.BytesIO()
-        with pd.ExcelWriter(output_buffer, engine='openpyxl') as writer:
-            st.info("İndirilebilir Excel raporu oluşturuluyor...")
-            analysis_results['karar_turu'].to_excel(writer, sheet_name='Genel_Ozetler', index=False)
-            analysis_results['kamu_zarari'].to_excel(writer, sheet_name='Genel_Ozetler', index=False, startcol=3)
-            analysis_results['azinlik_oyu'].to_excel(writer, sheet_name='Genel_Ozetler', index=False, startcol=6)
-            analysis_results['karar_konusu'].to_excel(writer, sheet_name='Karar_Konusu_Detaylari', index=False)
-            if analysis_results['unvan_analizi'] is not None:
-                df_unvan_for_excel = analysis_results['unvan_analizi'].drop(columns=['Toplam', 'Kamu Zararı Yok', 'KZ Oranı %'], errors='ignore')
-                df_unvan_for_excel.to_excel(writer, sheet_name='Unvan_Kamu_Zarari_Analizi')
-        return output_buffer.getvalue()
-    except Exception as e:
-        st.error(f"Excel raporu oluşturulurken bir hata oluştu: {e}")
         return None
 
 # ==============================================================================
@@ -278,68 +257,52 @@ if selected_tool == "Bireysel Dava Metni Analizi":
 
 elif selected_tool == "Toplu Veri Analizi ve Raporlama":
     
-    st.markdown("`sorumlu.xlsx` dosyasını kullanarak kapsamlı bir analiz yapar, sonuçları aşağıda gösterir ve tam raporu indirilebilir bir Excel dosyası olarak sunar.")
-    if st.button("📊 Kapsamlı Analiz Yap ve Göster", use_container_width=True):
-        with st.spinner("Analiz yapılıyor ve görseller hazırlanıyor..."):
-            script_dir = os.path.dirname(os.path.realpath(__file__))
-            analysis_data = analyze_and_prepare_data(script_dir)
-            if analysis_data:
-                st.session_state.analysis_results = analysis_data
-                report_file = generate_excel_report(analysis_data)
-                if report_file:
-                    st.session_state.report_data = report_file
-                    st.success("✅ Analiz tamamlandı! Sonuçları aşağıda görebilir ve tam raporu indirebilirsiniz.")
+    # --- YENİLENEN OTOMATİK ANALİZ BÖLÜMÜ ---
+    script_dir = os.path.dirname(os.path.realpath(__file__))
+    
+    # @st.cache_data sayesinde bu fonksiyon sadece bir kez çalışır, sonuçlar hafızaya alınır.
+    results = analyze_and_prepare_data(script_dir)
 
-    if 'report_data' in st.session_state:
-        st.download_button(
-            label="📥 Tam Analiz Raporunu İndir (.xlsx)",
-            data=st.session_state.report_data,
-            file_name="Vaaaov_Analiz_Raporu.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
-    if 'analysis_results' in st.session_state:
-        st.markdown("---")
+    if results:
         st.subheader("📊 Analiz Sonuçları ve Görseller")
-        results = st.session_state.analysis_results
         
         st.markdown("#### Genel Karar Dağılımları")
         
-        col1, col2 = st.columns([2, 1])
+        col1, col2 = st.columns([2, 1.2])
         with col1:
             fig_karar_turu = create_plotly_pie(results['karar_turu'], "Karar Türü Dağılımı")
             if fig_karar_turu: st.plotly_chart(fig_karar_turu, use_container_width=True)
         with col2:
-            st.dataframe(results['karar_turu'])
+            st.table(results['karar_turu'])
 
-        col1, col2 = st.columns([2, 1])
+        col1, col2 = st.columns([2, 1.2])
         with col1:
             fig_kamu_zarari = create_plotly_pie(results['kamu_zarari'], "Kamu Zararı Dağılımı")
             if fig_kamu_zarari: st.plotly_chart(fig_kamu_zarari, use_container_width=True)
         with col2:
-            st.dataframe(results['kamu_zarari'])
+            st.table(results['kamu_zarari'])
 
-        col1, col2 = st.columns([2, 1])
+        col1, col2 = st.columns([2, 1.2])
         with col1:
             fig_azinlik_oyu = create_plotly_pie(results['azinlik_oyu'], "Azınlık Oyu Dağılımı")
             if fig_azinlik_oyu: st.plotly_chart(fig_azinlik_oyu, use_container_width=True)
         with col2:
-            st.dataframe(results['azinlik_oyu'])
+            st.table(results['azinlik_oyu'])
         
         st.markdown("---")
         st.markdown("#### En Sık Görülen Karar Konuları")
-        col1, col2 = st.columns([2, 1])
+        col1, col2 = st.columns([2, 1.2])
         with col1:
             fig_konu = create_plotly_bar(results['karar_konusu'], "En Sık Görülen 15 Karar Konusu")
             if fig_konu: st.plotly_chart(fig_konu, use_container_width=True)
         with col2:
-            st.dataframe(results['karar_konusu'].head(15))
+            st.dataframe(results['karar_konusu'].head(15)) # Uzun listeler için dataframe daha iyi
         with st.expander("Tüm Karar Konularını ve Sayılarını Gör"):
             st.dataframe(results['karar_konusu'])
 
         st.markdown("---")
         st.markdown("#### En Sık Sorumlu Tutulan Unvanlar")
-        col1, col2 = st.columns([2, 1])
+        col1, col2 = st.columns([2, 1.2])
         with col1:
             if results['sorumlu_sayilari'] is not None:
                 fig_sorumlu = create_plotly_bar(results['sorumlu_sayilari'], "En Sık Sorumlu Tutulan 15 Unvan")
@@ -356,3 +319,5 @@ elif selected_tool == "Toplu Veri Analizi ve Raporlama":
             st.dataframe(results['unvan_analizi'])
         else:
             st.info("Unvan analizi için veri bulunamadı.")
+    else:
+        st.error("Analiz verileri yüklenemedi. Lütfen 'sorumlu.xlsx' dosyasının formatını ve içeriğini kontrol edin.")
