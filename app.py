@@ -5,7 +5,7 @@ import os
 import pandas as pd
 import google.generativeai as genai
 import re
-import plotly.express as px  # Matplotlib yerine Plotly Express import edildi
+import plotly.express as px  # Plotly Express kullanmaya devam ediyoruz
 import io
 import traceback
 
@@ -64,7 +64,7 @@ def cerrahi_analiz_tek_satir(metin):
             elif 'rektör' in temiz_parca: roller_bu_satirda.add('Rektör Vekili')
     return list(roller_bu_satirda)
 
-# --- YENİ PLOTLY GRAFİK FONKSİYONLARI ---
+# --- YENİ VE ŞIK PLOTLY GRAFİK FONKSİYONLARI ---
 def create_plotly_pie(data, title):
     if data.empty:
         return None
@@ -73,9 +73,19 @@ def create_plotly_pie(data, title):
         values=data.values, 
         names=data.index, 
         title=title,
-        template='seaborn' # Şık bir tema
+        hole=0.4,  # Ortasını boşaltarak donut chart yap
+        color_discrete_sequence=px.colors.qualitative.Pastel  # Şık bir renk paleti
     )
-    fig.update_layout(title_x=0.5) # Başlığı ortala
+    # Lejantı alta al, başlığı ortala ve arka planı şeffaf yap
+    fig.update_layout(
+        title_x=0.5,
+        legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='white' if st.get_option("theme.base") == "dark" else "black") # Tema uyumlu yazı rengi
+    )
+    # Üzerine gelince görünecek bilgi formatını ayarla
+    fig.update_traces(hovertemplate="<b>%{label}</b><br>Sayı: %{value}<br>Yüzde: %{percent}")
     return fig
 
 def create_plotly_bar(data, title, top_n=15):
@@ -90,14 +100,22 @@ def create_plotly_bar(data, title, top_n=15):
         y='Konu', 
         orientation='h', 
         title=title,
-        template='seaborn',
-        labels={'Sayı': 'Karar Sayısı', 'Konu': 'Karar Konusu'}
+        labels={'Sayı': 'Karar Sayısı', 'Konu': ''},
+        color='Sayı',  # Barların rengini sayısına göre değiştir
+        color_continuous_scale=px.colors.sequential.Teal, # Şık bir renk skalası
+        text='Sayı' # Barların üzerine sayıyı yaz
     )
-    fig.update_layout(title_x=0.5, yaxis={'categoryorder':'total ascending'})
+    fig.update_layout(
+        title_x=0.5, 
+        yaxis={'categoryorder':'total ascending'}, # Y eksenini değere göre sırala
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='white' if st.get_option("theme.base") == "dark" else "black")
+    )
     return fig
 
-# --- GÜNCELLENEN ANALİZ FONKSİYONU ---
 def analyze_and_prepare_data(script_dir):
+    # ... (Bu fonksiyonda değişiklik yok) ...
     try:
         dosya_adi = os.path.join(script_dir, "sorumlu.xlsx")
         df = pd.read_excel(dosya_adi, sheet_name='VERİ-2-EMİR', header=0, dtype=str).fillna('')
@@ -137,6 +155,7 @@ def analyze_and_prepare_data(script_dir):
         return None
 
 def generate_excel_report(analysis_results):
+    # ... (Bu fonksiyonda değişiklik yok) ...
     try:
         output_buffer = io.BytesIO()
         with pd.ExcelWriter(output_buffer, engine='openpyxl') as writer:
@@ -152,6 +171,7 @@ def generate_excel_report(analysis_results):
     except Exception as e:
         st.error(f"Excel raporu oluşturulurken bir hata oluştu: {e}")
         return None
+
 
 # ==============================================================================
 # BÖLÜM 3: GENEL UYGULAMA YAPISI VE AYARLAR
