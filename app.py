@@ -3,7 +3,6 @@ import pickle
 import numpy as np
 import os
 import pandas as pd
-import google.generativeai as genai
 import re
 import plotly.express as px
 from sklearn.base import BaseEstimator, ClassifierMixin, clone
@@ -66,23 +65,6 @@ def analyze_excel_data(script_dir):
 # ==============================================================================
 st.set_page_config(page_title="Hukuki Analiz Sistemi", layout="wide")
 
-# Streamlit klasör hatası verdiği için secrets.toml dosyasını manuel okuyoruz
-def load_api_key_manually():
-    if os.path.exists("secrets.toml"):
-        with open("secrets.toml", "r") as f:
-            for line in f:
-                if "GEMINI_API_KEY" in line:
-                    return line.split('=')[1].replace('"', '').replace("'", "").strip()
-    return None
-
-api_key = load_api_key_manually()
-gemini = None
-if api_key:
-    try:
-        genai.configure(api_key=api_key)
-        gemini = genai.GenerativeModel('gemini-2.5-flash')
-    except: pass
-
 @st.cache_resource
 def load_bundle():
     path = os.path.join(os.path.dirname(__file__), "final_models_combined.pkl")
@@ -91,7 +73,7 @@ def load_bundle():
             return pickle.load(f)
     except: return None
 
-# Modelleri Çıkart (Sizin Debug Çıktınızdaki Anahtarlarla Birebir Eşleşir)
+# Modelleri Yükle
 bundle = load_bundle()
 if bundle:
     law_model = bundle.get('law_model_lr')
@@ -102,18 +84,15 @@ if bundle:
 else:
     st.error("🚨 final_models_combined.pkl dosyası bulunamadı!")
 
-# Tam metin veri seti
-df_full = pd.read_excel("SOMUT OLAY-PYHTON.xlsx") if os.path.exists("SOMUT OLAY-PYHTON.xlsx") else None
-
 # ==============================================================================
 # 4. BÖLÜM: KULLANICI ARAYÜZÜ (UI)
 # ==============================================================================
-st.sidebar.title("⚖️ Analiz Platformu")
-tool = st.sidebar.radio("Seçiniz:", ("Bireysel Dava Analizi", "Toplu Raporlama"))
+tool = st.sidebar.radio("Seçiniz:", ("Sayıştay Karar Destek Sistemi", "Veri Analizi"))
 st.sidebar.markdown("---")
-if tool == "Bireysel Dava Analizi":
-    st.title("⚖️ Bireysel Dava Metni Analizi")
-    txt = st.text_area("Analiz edilecek metin başlangıcını buraya yapıştırın:", height=250)
+
+if tool == "Sayıştay Karar Destek Sistemi":
+    st.title("⚖️ Sayıştay Karar Destek Sistemi")
+    txt = st.text_area("Analiz edilecek metni yazınız:", height=300)
     
     if st.button("🔍 Analizi Başlat", type="primary"):
         if txt and bundle:
@@ -132,25 +111,18 @@ if tool == "Bireysel Dava Analizi":
                     st.subheader("📚 İlgili Kanunlar")
                     if pred_laws:
                         for l in pred_laws: st.success(l)
-                    else: st.info("Kanun bulunamadı.")
+                    else: st.info("Eşleşen kanun bulunamadı.")
                 with col2:
-                    st.subheader("💰 Kamu Zararı")
-                    if pred_dmg == "VAR": st.error("🚨 TESPİT EDİLDİ")
-                    else: st.info("✅ TESPİT EDİLMEDİ")
-                
-                # Gemini Özetleme
-                if df_full is not None and gemini:
-                    match = df_full[df_full['GİRİŞ'].str.strip().str.startswith(txt.strip()[:30], na=False)]
-                    if not match.empty:
-                        res = gemini.generate_content(f"Aşağıdaki Sayıştay kararını özetle: {match['Tam Metin'].iloc[0]}")
-                        st.markdown("---")
-                        st.subheader("🤖 AI Karar Özeti")
-                        st.info(res.text)
-                    else:
-                        st.warning("Metne ait tam sürüm Excel'de bulunamadığı için AI özeti oluşturulamadı.")
+                    st.subheader("💰 Kamu Zararı Durumu")
+                    if pred_dmg == "VAR": 
+                        st.error("🚨 KAMU ZARARI TESPİT EDİLDİ")
+                    else: 
+                        st.info("✅ KAMU ZARARI TESPİT EDİLMEDİ")
+        elif not txt:
+            st.warning("Lütfen analiz edilecek bir metin giriniz.")
 
 else:
-    st.title("📊 Toplu Veri Analizi")
+    st.title("📊 Veri Analizi")
     res = analyze_excel_data(os.path.dirname(__file__))
     if res:
         c1, c2 = st.columns(2)
@@ -163,4 +135,3 @@ else:
             st.plotly_chart(px.bar(res['sorumlular'].head(15), x=res['sorumlular'].columns[1], y=res['sorumlular'].columns[0], orientation='h', title="Sorumlu Unvanlar Dağılımı"), use_container_width=True)
     else:
         st.error("Analiz dosyası (sorumlu.xlsx) bulunamadı.")
-
