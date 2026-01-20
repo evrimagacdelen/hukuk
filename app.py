@@ -61,7 +61,7 @@ def analyze_excel_data(script_dir):
     except: return None
 
 # ==============================================================================
-# 3. BÖLÜM: MODELLERİN YÜKLENMESİ
+# 3. BÖLÜM: KONFİGÜRASYON VE MODELLERİN YÜKLENMESİ
 # ==============================================================================
 st.set_page_config(page_title="Hukuki Analiz Sistemi", layout="wide")
 
@@ -73,6 +73,7 @@ def load_bundle():
             return pickle.load(f)
     except: return None
 
+# Modelleri Çıkart
 bundle = load_bundle()
 if bundle:
     law_model = bundle.get('law_model_lr')
@@ -91,12 +92,12 @@ st.sidebar.markdown("---")
 
 if tool == "Sayıştay Karar Destek Sistemi":
     st.title("⚖️ Sayıştay Karar Destek Sistemi")
-    txt = st.text_area("Analiz edilecek metni yazınız:", height=300)
+    txt = st.text_area("Analiz edilecek metni yazınız:", height=250)
     
     if st.button("🔍 Analizi Başlat", type="primary"):
         if txt and bundle:
             with st.spinner("Analiz ediliyor..."):
-                # Kanun ve Zarar Tahmini
+                # Kanun ve Zarar Tahmini (ML Modeli)
                 X_l = vec_law.transform([txt])
                 y_l = law_model.predict(X_l)[0]
                 pred_laws = [classes[i] for i, v in enumerate(y_l) if v == 1]
@@ -110,21 +111,25 @@ if tool == "Sayıştay Karar Destek Sistemi":
                     st.subheader("📚 İlgili Kanunlar")
                     if pred_laws:
                         for l in pred_laws: st.success(l)
-                    else: st.info("Kanun bulunamadı.")
+                    else: st.info("Eşleşen kanun bulunamadı.")
                 with col2:
                     st.subheader("💰 Kamu Zararı")
-                    if pred_dmg == "VAR": st.error("🚨 TESPİT EDİLDİ")
-                    else: st.info("✅ TESPİT EDİLMEDİ")
-        elif not txt:
-            st.warning("Lütfen bir metin giriniz.")
+                    if pred_dmg == "VAR": 
+                        st.error("🚨 TESPİT EDİLDİ")
+                    else: 
+                        st.info("✅ TESPİT EDİLMEDİ")
+        else:
+            st.warning("Lütfen analiz için bir metin giriniz.")
 
 else:
     st.title("📊 Veri Analizi")
     res = analyze_excel_data(os.path.dirname(__file__))
     if res:
         c1, c2 = st.columns(2)
-        with c1: st.plotly_chart(px.pie(res['karar_turu'], values=res['karar_turu'].columns[1], names=res['karar_turu'].columns[0], title="Karar Türleri Dağılımı", hole=0.4), use_container_width=True)
-        with c2: st.plotly_chart(px.pie(res['kamu_zarari'], values=res['kamu_zarari'].columns[1], names=res['kamu_zarari'].columns[0], title="Kamu Zararı Oranı", hole=0.4), use_container_width=True)
+        with c1: 
+            st.plotly_chart(px.pie(res['karar_turu'], values=res['karar_turu'].columns[1], names=res['karar_turu'].columns[0], title="Karar Türleri Dağılımı", hole=0.4), use_container_width=True)
+        with c2: 
+            st.plotly_chart(px.pie(res['kamu_zarari'], values=res['kamu_zarari'].columns[1], names=res['kamu_zarari'].columns[0], title="Kamu Zararı Oranı", hole=0.4), use_container_width=True)
         
         st.plotly_chart(px.bar(res['konu'].head(15), x=res['konu'].columns[1], y=res['konu'].columns[0], orientation='h', title="En Sık Karar Konuları", color_continuous_scale='Teals'), use_container_width=True)
         
