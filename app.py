@@ -111,11 +111,6 @@ df_full = pd.read_excel("SOMUT OLAY-PYHTON.xlsx") if os.path.exists("SOMUT OLAY-
 st.sidebar.title("⚖️ Analiz Platformu")
 tool = st.sidebar.radio("Seçiniz:", ("Bireysel Dava Analizi", "Toplu Raporlama"))
 st.sidebar.markdown("---")
-if not api_key:
-    st.sidebar.error("❌ secrets.toml okunamadı!")
-else:
-    st.sidebar.success("✅ API Anahtarı Hazır")
-
 if tool == "Bireysel Dava Analizi":
     st.title("⚖️ Bireysel Dava Metni Analizi")
     txt = st.text_area("Analiz edilecek metin başlangıcını buraya yapıştırın:", height=250)
@@ -168,3 +163,4 @@ else:
             st.plotly_chart(px.bar(res['sorumlular'].head(15), x=res['sorumlular'].columns[1], y=res['sorumlular'].columns[0], orientation='h', title="Sorumlu Unvanlar Dağılımı"), use_container_width=True)
     else:
         st.error("Analiz dosyası (sorumlu.xlsx) bulunamadı.")
+
