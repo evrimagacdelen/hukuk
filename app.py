@@ -3,16 +3,15 @@ import pickle
 import numpy as np
 import os
 import pandas as pd
-import re
 import plotly.express as px
 from sklearn.base import BaseEstimator, ClassifierMixin, clone
 from sklearn.dummy import DummyClassifier
 
 # ==============================================================================
-# 1. BÖLÜM: MODEL İÇİN GEREKLİ SINIF (PICKLE AÇMAK İÇİN ŞART)
+# 1. BÖLÜM: MODEL İÇİN GEREKLİ SINIF
 # ==============================================================================
 class CustomLawClassifier(BaseEstimator, ClassifierMixin):
-    def __init__(self, base_estimator):
+    def __init__(self, base_estimator=None):
         self.base_estimator = base_estimator
         self.models = []
     def fit(self, X, Y):
@@ -32,18 +31,43 @@ class CustomLawClassifier(BaseEstimator, ClassifierMixin):
         return np.array([model.predict(X) for model in self.models]).T
 
 # ==============================================================================
-# 2. BÖLÜM: YARDIMCI FONKSİYONLAR VE ANALİZ
+# 2. BÖLÜM: MODEL YÜKLEME (Geliştirilmiş)
+# ==============================================================================
+@st.cache_resource
+def load_bundle():
+    path = os.path.join(os.path.dirname(__file__), "final_models_combined.pkl")
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "rb") as f:
+            return pickle.load(f)
+    except Exception as e:
+        st.error(f"Model yükleme hatası: {e}")
+        return None
+
+bundle = load_bundle()
+
+# Modelleri güvenli bir şekilde çekelim
+if bundle:
+    # Anahtar isimleri değişmiş olabilir, alternatifleri kontrol edelim
+    law_model = bundle.get('law_model_lr') or bundle.get('law_model')
+    damage_model = bundle.get('damage_model')
+    vec_law = bundle.get('vectorizer_laws') or bundle.get('vectorizer_law')
+    vec_dmg = bundle.get('vectorizer_damage')
+    classes = bundle.get('mlb_classes')
+else:
+    law_model = damage_model = vec_law = vec_dmg = classes = None
+
+# ==============================================================================
+# 3. BÖLÜM: ANALİZ FONKSİYONLARI
 # ==============================================================================
 def cerrahi_analiz_tek_satir(metin):
-    """Metin içinden unvanları ve akademik dereceleri ayıklar."""
-    BILINEN_UNVANLAR = sorted(['Harcama Yetkilisi', 'Gerçekleştirme Görevlisi', 'Muhasebe Yetkilisi', 'Üst Yönetici', 'Akademik Teşvik Komisyonu', 'Üniversite Yönetim Kurulu', 'Döner Sermaye Yürütme Kurulu', 'Fakülte Yönetim Kurulu', 'İtiraz Komisyonu', 'Birim Komisyon', 'Jüri', 'Üniversite Senatosu', 'Personel Daire Başkanı', 'Strateji Geliştirme Daire Başkanı', 'İdari ve Mali İşler Daire Başkanı', 'Sağlık Kültür ve Spor Daire Başkanı', 'Döner Sermaye İşletme Müdürü', 'Hastane Başmüdürü', 'Hukuk Müşaviri', 'Fakülte Sekreteri', 'Enstitü Sekreteri', 'Yüksekokul Sekreteri', 'Rektör Yardımcısı', 'Dekan Yardımcısı', 'Başhekim Yardımcısı', 'Müdür Yardımcısı', 'Yüksekokul Müdürü', 'Enstitü Müdürü', 'Merkez Müdürü', 'Şube Müdürü', 'Hastane Müdürü', 'Daire Başkanı', 'Rektör', 'Dekan', 'Başhekim', 'Genel Sekreter', 'Müdür', 'Memur', 'Şef', 'Tekniker', 'Sayman', 'Bilgisayar İşletmeni', 'Öğretim Üyesi', 'Başkan'], key=len, reverse=True)
+    BILINEN_UNVANLAR = sorted(['Harcama Yetkilisi', 'Gerçekleştirme Görevlisi', 'Muhasebe Yetkilisi', 'Üst Yönetici', 'Akademik Teşvik Komisyonu', 'Rektör', 'Dekan', 'Başhekim', 'Genel Sekreter', 'Müdür', 'Memur', 'Şef'], key=len, reverse=True)
     if not isinstance(metin, str) or metin in ["YOK", "Kaynakta Yok"]: return []
     roller = set()
     for unvan in BILINEN_UNVANLAR:
         if unvan.lower() in metin.lower():
-            rol = unvan
-            if any(k in unvan for k in ['Kurulu', 'Komisyonu', 'Senatosu', 'Jüri']): rol += ' Üyesi'
-            roller.add(rol)
+            roller.add(unvan)
     return list(roller)
 
 @st.cache_data
@@ -61,79 +85,61 @@ def analyze_excel_data(script_dir):
     except: return None
 
 # ==============================================================================
-# 3. BÖLÜM: KONFİGÜRASYON VE MODELLERİN YÜKLENMESİ
+# 4. BÖLÜM: UI
 # ==============================================================================
 st.set_page_config(page_title="Hukuki Analiz Sistemi", layout="wide")
-
-@st.cache_resource
-def load_bundle():
-    path = os.path.join(os.path.dirname(__file__), "final_models_combined.pkl")
-    try:
-        with open(path, "rb") as f:
-            return pickle.load(f)
-    except: return None
-
-# Modelleri Çıkart
-bundle = load_bundle()
-if bundle:
-    law_model = bundle.get('law_model_lr')
-    damage_model = bundle.get('damage_model')
-    vec_law = bundle.get('vectorizer_laws')
-    vec_dmg = bundle.get('vectorizer_damage')
-    classes = bundle.get('mlb_classes')
-else:
-    st.error("🚨 final_models_combined.pkl dosyası bulunamadı!")
-
-# ==============================================================================
-# 4. BÖLÜM: KULLANICI ARAYÜZÜ (UI)
-# ==============================================================================
 tool = st.sidebar.radio("Seçiniz:", ("Sayıştay Karar Destek Sistemi", "Veri Analizi"))
-st.sidebar.markdown("---")
 
 if tool == "Sayıştay Karar Destek Sistemi":
     st.title("⚖️ Sayıştay Karar Destek Sistemi")
-    txt = st.text_area("Analiz edilecek metni yazınız:", height=250)
     
-    if st.button("🔍 Analizi Başlat", type="primary"):
-        if txt and bundle:
-            with st.spinner("Analiz ediliyor..."):
-                # Kanun ve Zarar Tahmini (ML Modeli)
-                X_l = vec_law.transform([txt])
-                y_l = law_model.predict(X_l)[0]
-                pred_laws = [classes[i] for i, v in enumerate(y_l) if v == 1]
-                
-                X_d = vec_dmg.transform([txt])
-                pred_dmg = "VAR" if damage_model.predict(X_d)[0] == 1 else "YOK"
-                
-                # Sonuç Paneli
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.subheader("📚 İlgili Kanunlar")
-                    if pred_laws:
-                        for l in pred_laws: st.success(l)
-                    else: st.info("Eşleşen kanun bulunamadı.")
-                with col2:
-                    st.subheader("💰 Kamu Zararı")
-                    if pred_dmg == "VAR": 
-                        st.error("🚨 TESPİT EDİLDİ")
-                    else: 
-                        st.info("✅ TESPİT EDİLMEDİ")
-        else:
-            st.warning("Lütfen analiz için bir metin giriniz.")
+    if bundle is None:
+        st.error("🚨 'final_models_combined.pkl' dosyası bulunamadı veya yüklenemedi. Lütfen dosyanın uygulama ile aynı klasörde olduğundan emin olun.")
+    else:
+        txt = st.text_area("Analiz edilecek metni yazınız:", height=250)
+        
+        if st.button("🔍 Analizi Başlat", type="primary"):
+            if txt:
+                try:
+                    with st.spinner("Analiz ediliyor..."):
+                        # Tahminleri yapmadan önce objelerin varlığını kontrol et
+                        if law_model and vec_law:
+                            X_l = vec_law.transform([txt])
+                            y_l = law_model.predict(X_l)[0]
+                            pred_laws = [classes[i] for i, v in enumerate(y_l) if v == 1]
+                        else:
+                            pred_laws = []
+
+                        if damage_model and vec_dmg:
+                            X_d = vec_dmg.transform([txt])
+                            pred_dmg = "VAR" if damage_model.predict(X_d)[0] == 1 else "YOK"
+                        else:
+                            pred_dmg = "Bilinmiyor"
+
+                        # Sonuç Paneli
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.subheader("📚 İlgili Kanunlar")
+                            if pred_laws:
+                                for l in pred_laws: st.success(l)
+                            else: st.info("Eşleşen kanun bulunamadı.")
+                        with col2:
+                            st.subheader("💰 Kamu Zararı")
+                            if pred_dmg == "VAR": st.error("🚨 TESPİT EDİLDİ")
+                            elif pred_dmg == "YOK": st.info("✅ TESPİT EDİLMEDİ")
+                            else: st.warning("Tahmin yapılamadı.")
+                except Exception as e:
+                    st.error(f"Analiz sırasında bir hata oluştu: {e}")
+            else:
+                st.warning("Lütfen bir metin giriniz.")
 
 else:
     st.title("📊 Veri Analizi")
     res = analyze_excel_data(os.path.dirname(__file__))
     if res:
         c1, c2 = st.columns(2)
-        with c1: 
-            st.plotly_chart(px.pie(res['karar_turu'], values=res['karar_turu'].columns[1], names=res['karar_turu'].columns[0], title="Karar Türleri Dağılımı", hole=0.4), use_container_width=True)
-        with c2: 
-            st.plotly_chart(px.pie(res['kamu_zarari'], values=res['kamu_zarari'].columns[1], names=res['kamu_zarari'].columns[0], title="Kamu Zararı Oranı", hole=0.4), use_container_width=True)
-        
-        st.plotly_chart(px.bar(res['konu'].head(15), x=res['konu'].columns[1], y=res['konu'].columns[0], orientation='h', title="En Sık Karar Konuları", color_continuous_scale='Teals'), use_container_width=True)
-        
-        if res['sorumlular'] is not None:
-            st.plotly_chart(px.bar(res['sorumlular'].head(15), x=res['sorumlular'].columns[1], y=res['sorumlular'].columns[0], orientation='h', title="Sorumlu Unvanlar Dağılımı"), use_container_width=True)
+        with c1: st.plotly_chart(px.pie(res['karar_turu'], values=res['karar_turu'].columns[1], names=res['karar_turu'].columns[0], title="Karar Türleri Dağılımı", hole=0.4), use_container_width=True)
+        with c2: st.plotly_chart(px.pie(res['kamu_zarari'], values=res['kamu_zarari'].columns[1], names=res['kamu_zarari'].columns[0], title="Kamu Zararı Oranı", hole=0.4), use_container_width=True)
+        st.plotly_chart(px.bar(res['konu'].head(15), x=res['konu'].columns[1], y=res['konu'].columns[0], orientation='h', title="En Sık Karar Konuları"), use_container_width=True)
     else:
         st.error("Analiz dosyası (sorumlu.xlsx) bulunamadı.")
