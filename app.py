@@ -61,7 +61,7 @@ def analyze_excel_data(script_dir):
     except: return None
 
 # ==============================================================================
-# 3. BÖLÜM: KONFİGÜRASYON VE MODELLERİN YÜKLENMESİ
+# 3. BÖLÜM: MODELLERİN YÜKLENMESİ
 # ==============================================================================
 st.set_page_config(page_title="Hukuki Analiz Sistemi", layout="wide")
 
@@ -73,7 +73,6 @@ def load_bundle():
             return pickle.load(f)
     except: return None
 
-# Modelleri Çıkart
 bundle = load_bundle()
 if bundle:
     law_model = bundle.get('law_model_lr')
@@ -116,8 +115,8 @@ if tool == "Sayıştay Karar Destek Sistemi":
                     st.subheader("💰 Kamu Zararı")
                     if pred_dmg == "VAR": st.error("🚨 TESPİT EDİLDİ")
                     else: st.info("✅ TESPİT EDİLMEDİ")
-        else:
-            st.warning("Lütfen analiz için bir metin giriniz.")
+        elif not txt:
+            st.warning("Lütfen bir metin giriniz.")
 
 else:
     st.title("📊 Veri Analizi")
